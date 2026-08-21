@@ -42,6 +42,42 @@ def test_listing_rejects_non_hotlink_image_sources(client, auth_tokens):
     assert response.get_json()["code"] == "image_source_not_allowed"
 
 
+def test_listing_rejects_an_allowed_host_that_is_not_a_live_image(client, auth_tokens):
+    response = client.post(
+        "/api/farmer/listings",
+        headers=bearer(auth_tokens["farmer"]),
+        json={
+            "name": "Missing Photo Apples",
+            "category": "Fruit",
+            "price_azn": 4,
+            "stock": 2,
+            "season": "Autumn",
+            "image_url": "https://upload.wikimedia.org/wikipedia/commons/does-not-exist-bazaario.jpg",
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.get_json()["code"] == "image_not_verified"
+
+
+def test_non_finite_price_is_rejected_with_422(client, auth_tokens):
+    response = client.post(
+        "/api/farmer/listings",
+        headers=bearer(auth_tokens["farmer"]),
+        json={
+            "name": "Invalid Price Apples",
+            "category": "Fruit",
+            "price_azn": "NaN",
+            "stock": 2,
+            "season": "Autumn",
+            "image_url": "https://images.unsplash.com/photo-1560806887-1e4cd0b6cbd6?w=1200&q=80",
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.get_json()["code"] == "validation_error"
+
+
 def test_customer_can_filter_catalog_by_category(client):
     response = client.get("/api/products?category=Fruit")
 
@@ -52,6 +88,17 @@ def test_customer_can_filter_catalog_by_category(client):
     autumn = client.get("/api/products?season=Autumn")
     assert autumn.status_code == 200
     assert autumn.get_json()["products"]
+
+
+def test_non_object_json_payload_returns_422(client, auth_tokens):
+    response = client.post(
+        "/api/customer/orders",
+        headers=bearer(auth_tokens["customer"]),
+        json=["not", "an", "object"],
+    )
+
+    assert response.status_code == 422
+    assert response.get_json()["code"] == "validation_error"
 
 
 def test_order_lifecycle_is_sequential_and_creates_exactly_five_audits(

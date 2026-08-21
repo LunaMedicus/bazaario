@@ -26,6 +26,16 @@ def utc_now():
 
 class User(db.Model):
     __tablename__ = "users"
+    __table_args__ = (
+        db.CheckConstraint(
+            "role IN ('customer', 'farmer', 'admin')",
+            name="ck_users_role",
+        ),
+        db.CheckConstraint(
+            "account_status IN ('active', 'suspended')",
+            name="ck_users_account_status",
+        ),
+    )
 
     id = db.Column(db.Integer, primary_key=True)
     email = db.Column(db.String(255), unique=True, nullable=False, index=True)
@@ -65,6 +75,12 @@ class User(db.Model):
 
 class FarmerProfile(db.Model):
     __tablename__ = "farmer_profiles"
+    __table_args__ = (
+        db.CheckConstraint(
+            "verification_status IN ('pending_verification', 'approved', 'suspended')",
+            name="ck_farmer_profiles_verification_status",
+        ),
+    )
 
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), unique=True, nullable=False)
@@ -113,6 +129,14 @@ class Region(db.Model):
 
 class Product(db.Model):
     __tablename__ = "products"
+    __table_args__ = (
+        db.CheckConstraint(
+            "category IN ('Fruit', 'Vegetables', 'Grains', 'Dairy', 'Honey & bee products', 'Herbs', 'Nuts', 'Tea')",
+            name="ck_products_agricultural_category",
+        ),
+        db.CheckConstraint("price_azn >= 0", name="ck_products_non_negative_price"),
+        db.CheckConstraint("stock >= 0", name="ck_products_non_negative_stock"),
+    )
 
     id = db.Column(db.Integer, primary_key=True)
     farmer_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
@@ -159,6 +183,17 @@ class Product(db.Model):
 
 class Order(db.Model):
     __tablename__ = "orders"
+    __table_args__ = (
+        db.CheckConstraint(
+            "status IN ('placed', 'confirmed', 'harvested', 'in_transit', 'delivered')",
+            name="ck_orders_status",
+        ),
+        db.CheckConstraint("total_azn >= 0", name="ck_orders_non_negative_total"),
+        db.CheckConstraint(
+            "payment_method IN ('cash_on_delivery', 'card_sandbox')",
+            name="ck_orders_payment_method",
+        ),
+    )
 
     id = db.Column(db.Integer, primary_key=True)
     customer_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
@@ -186,6 +221,10 @@ class Order(db.Model):
 
 class OrderItem(db.Model):
     __tablename__ = "order_items"
+    __table_args__ = (
+        db.CheckConstraint("quantity > 0", name="ck_order_items_positive_quantity"),
+        db.CheckConstraint("unit_price_azn >= 0", name="ck_order_items_non_negative_price"),
+    )
 
     id = db.Column(db.Integer, primary_key=True)
     order_id = db.Column(db.Integer, db.ForeignKey("orders.id"), nullable=False)
@@ -199,6 +238,13 @@ class OrderItem(db.Model):
 
 class OrderAudit(db.Model):
     __tablename__ = "order_audits"
+    __table_args__ = (
+        db.UniqueConstraint("order_id", "to_status", name="uq_order_audit_transition"),
+        db.CheckConstraint(
+            "to_status IN ('placed', 'confirmed', 'harvested', 'in_transit', 'delivered')",
+            name="ck_order_audits_to_status",
+        ),
+    )
 
     id = db.Column(db.Integer, primary_key=True)
     order_id = db.Column(db.Integer, db.ForeignKey("orders.id"), nullable=False, index=True)
@@ -226,6 +272,7 @@ class Review(db.Model):
     __tablename__ = "reviews"
     __table_args__ = (
         db.UniqueConstraint("order_id", "product_id", name="uq_review_order_product"),
+        db.CheckConstraint("rating BETWEEN 1 AND 5", name="ck_reviews_rating"),
     )
 
     id = db.Column(db.Integer, primary_key=True)
@@ -254,6 +301,12 @@ class Review(db.Model):
 
 class DisputeFlag(db.Model):
     __tablename__ = "dispute_flags"
+    __table_args__ = (
+        db.CheckConstraint(
+            "status IN ('open', 'resolved')",
+            name="ck_dispute_flags_status",
+        ),
+    )
 
     id = db.Column(db.Integer, primary_key=True)
     order_id = db.Column(db.Integer, db.ForeignKey("orders.id"), nullable=False)

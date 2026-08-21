@@ -43,17 +43,18 @@ VITE_API_URL=http://127.0.0.1:5050/api npm run dev -- --host 127.0.0.1 --port 51
 
 ### PostgreSQL
 
-For a local PostgreSQL service:
+For a local PostgreSQL service, choose a strong local password first and export it (or put it in `.env`):
 
 ```bash
+export POSTGRES_PASSWORD="$(python -c 'import secrets; print(secrets.token_urlsafe(24))')"
 docker compose up -d postgres
-# edit .env and set:
-# DATABASE_URL=postgresql+psycopg://bazaario:bazaario@localhost:5432/bazaario
+# edit .env and set the matching URL:
+# DATABASE_URL=postgresql+psycopg://bazaario:<your-password>@127.0.0.1:5432/bazaario
 python seed.py
 flask run
 ```
 
-`Flask-SQLAlchemy` uses PostgreSQL in this mode through `psycopg`. SQLite is only the zero-setup development fallback; the application does not use an alternate persistence layer.
+The Compose database is bound to loopback only and refuses to start without an explicit password. `Flask-SQLAlchemy` uses PostgreSQL in this mode through `psycopg`. SQLite is only the zero-setup development fallback; the application does not use an alternate persistence layer.
 
 ## Demo accounts
 
@@ -76,7 +77,7 @@ Every JWT contains `role` and `account_status` claims. Protected route groups us
 - Admin: `/api/admin/*`
 - Public: `/api/auth/register/customer`, `/api/auth/register/farmer`, `/api/auth/login`, `/api/products`, `/api/meta`
 
-Farmer signup creates a `FarmerProfile` with `pending_verification`. Listing create/update/archive checks the profile status and returns `403` with `code: "farmer_verification_required"` until an admin approves it. Suspending a farmer also suspends the account.
+Farmer signup creates a `FarmerProfile` with `pending_verification`. Listing create/update/archive checks the profile status and returns `403` with `code: "farmer_verification_required"` until an admin approves it. Suspending a farmer also suspends the account; suspended or unapproved farms are excluded from the public catalog and checkout. Every farmer-submitted listing URL is checked live for an HTTP 200 `image/*` response from an approved image host.
 
 ## Order lifecycle invariant
 

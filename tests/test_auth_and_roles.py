@@ -1,4 +1,6 @@
 from tests.conftest import login
+from backend.bazaario.extensions import db
+from backend.bazaario.models import User
 
 
 def bearer(token):
@@ -57,6 +59,44 @@ def test_suspended_account_is_rejected_even_with_an_existing_token(client, auth_
     )
     assert dashboard.status_code == 403
     assert dashboard.get_json()["code"] == "account_suspended"
+
+
+def test_role_claim_must_match_current_user_role(app, client, auth_tokens):
+    with app.app_context():
+        user = User.query.filter_by(email="customer@test.az").first()
+        user.role = "farmer"
+        db.session.commit()
+
+    dashboard = client.get(
+        "/api/customer/dashboard", headers=bearer(auth_tokens["customer"])
+    )
+
+    assert dashboard.status_code == 403
+    assert dashboard.get_json()["error"] == "forbidden"
+
+
+def test_suspended_farmer_products_are_hidden_and_not_orderable(client, auth_tokens):
+    suspended = client.post(
+        "/api/admin/farmers/2/suspend", headers=bearer(auth_tokens["admin"])
+    )
+    assert suspended.status_code == 200
+
+    catalog = client.get("/api/products")
+    detail = client.get("/api/products/1")
+    checkout = client.post(
+        "/api/customer/orders",
+        headers=bearer(auth_tokens["customer"]),
+        json={
+            "items": [{"product_id": 1, "quantity": 1}],
+            "delivery_address": "Test address",
+            "payment_method": "cash_on_delivery",
+        },
+    )
+
+    assert catalog.status_code == 200
+    assert all(product["farm"]["id"] != 2 for product in catalog.get_json()["products"])
+    assert detail.status_code == 404
+    assert checkout.status_code == 404
 
 
 def test_farmer_registration_starts_pending_and_cannot_publish(client):

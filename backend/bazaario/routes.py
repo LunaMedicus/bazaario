@@ -3,6 +3,7 @@ from decimal import Decimal, InvalidOperation
 from functools import wraps
 from urllib.parse import urlparse
 
+import requests
 from flask import Blueprint, jsonify, request
 from flask_jwt_extended import (
     create_access_token,
@@ -11,6 +12,7 @@ from flask_jwt_extended import (
     jwt_required,
 )
 from sqlalchemy import or_
+from sqlalchemy.exc import IntegrityError
 
 from .extensions import db
 from .models import (
@@ -66,13 +68,37 @@ def handle_api_error(error):
 
 
 def _data():
-    return request.get_json(silent=True) or {}
+    payload = request.get_json(silent=True)
+    if payload is None:
+        return {}
+    if not isinstance(payload, dict):
+        raise ApiError("Request JSON must be an object", 422, "validation_error")
+    return payload
 
 
 def _required(data, *fields):
-    missing = [field for field in fields if data.get(field) in (None, "")]
+    missing = [
+        field
+        for field in fields
+        if field not in data
+        or data[field] is None
+        or (isinstance(data[field], str) and not data[field].strip())
+    ]
     if missing:
         raise ApiError(f"Missing required field(s): {', '.join(missing)}", 422, "validation_error")
+
+
+def _text(data, field, max_length=None):
+    _required(data, field)
+    value = data[field]
+    if not isinstance(value, str):
+        raise ApiError(f"{field} must be text", 422, "validation_error")
+    value = value.strip()
+    if max_length and len(value) > max_length:
+        raise ApiError(f"{field} is too long", 422, "validation_error")
+    if not value:
+        raise ApiError(f"{field} cannot be blank", 422, "validation_error")
+    return value
 
 
 def _current_user():
@@ -92,8 +118,12 @@ def role_required(*allowed_roles):
             user = db.session.get(User, int(get_jwt_identity()))
             if not user:
                 return jsonify(_error_payload("User no longer exists", "unauthorized")), 401
-            if user.account_status == "suspended":
-                return jsonify(_error_payload("Account is suspended", "account_suspended")), 403
+            if user.account_status != "active":
+                if user.account_status == "suspended":
+                    return jsonify(_error_payload("Account is suspended", "account_suspended")), 403
+                return jsonify(_error_payload("Account is not active", "account_inactive")), 403
+            if user.role != role:
+                return jsonify({"error": "forbidden", "message": "You do not have permission for this role"}), 403
             return view(*args, **kwargs)
 
         return wrapped
@@ -112,22 +142,58 @@ def _normal_email(value):
 
 
 def _create_user(data, role):
-    _required(data, "email", "password", "display_name")
-    email = _normal_email(data["email"])
-    if "@" not in email or len(data["password"]) < 8:
+    email = _text(data, "email", 255).lower()
+    password = _text(data, "password", 200)
+    display_name = _text(data, "display_name", 120)
+    if "@" not in email or len(password) < 8:
         raise ApiError("Use a valid email and a password of at least 8 characters", 422, "validation_error")
     if User.query.filter_by(email=email).first():
         raise ApiError("An account with this email already exists", 409, "email_exists")
-    user = User(email=email, display_name=str(data["display_name"]).strip(), role=role)
-    user.set_password(data["password"])
+    user = User(email=email, display_name=display_name, role=role)
+    user.set_password(password)
     db.session.add(user)
     db.session.flush()
     return user
 
 
+def _verify_image_url(image_url):
+    try:
+        response = requests.get(
+            image_url,
+            headers={"User-Agent": "Bazaario image verifier/1.0"},
+            allow_redirects=True,
+            stream=True,
+            timeout=(5, 10),
+        )
+    except requests.RequestException as exc:
+        raise ApiError("image_url could not be verified", 422, "image_not_verified") from exc
+
+    try:
+        final_host = (urlparse(response.url).hostname or "").lower()
+        content_type = response.headers.get("Content-Type", "").split(";", 1)[0].strip().lower()
+        content_length = response.headers.get("Content-Length")
+        if (
+            response.status_code != 200
+            or not content_type.startswith("image/")
+            or final_host not in IMAGE_SOURCE_HOSTS
+            or (content_length and int(content_length) > 10 * 1024 * 1024)
+        ):
+            raise ApiError(
+                "image_url must resolve to a live image under 10 MB",
+                422,
+                "image_not_verified",
+            )
+    except (TypeError, ValueError) as exc:
+        raise ApiError("image_url could not be verified", 422, "image_not_verified") from exc
+    finally:
+        response.close()
+
+
 def _product_payload(data):
-    _required(data, "name", "category", "price_azn", "stock", "season", "image_url")
-    category = str(data["category"]).strip()
+    name = _text(data, "name", 180)
+    category = _text(data, "category", 80)
+    season = _text(data, "season", 120)
+    image_url = _text(data, "image_url", 2048)
     if category not in ALLOWED_CATEGORIES:
         raise ApiError(
             "Only agricultural categories are allowed",
@@ -136,16 +202,23 @@ def _product_payload(data):
         )
     try:
         price = Decimal(str(data["price_azn"]))
-    except (InvalidOperation, TypeError):
+    except (InvalidOperation, TypeError, ValueError):
         raise ApiError("price_azn must be a number", 422, "validation_error")
+    if not price.is_finite():
+        raise ApiError("price_azn must be finite", 422, "validation_error")
     try:
         stock = int(data["stock"])
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         raise ApiError("stock must be a whole number", 422, "validation_error")
-    image_url = str(data["image_url"]).strip()
+    if isinstance(data["stock"], bool) or stock < 0:
+        raise ApiError("stock must be a non-negative whole number", 422, "validation_error")
+    if price < 0 or price > Decimal("99999999.99"):
+        raise ApiError("price_azn is outside the supported range", 422, "validation_error")
+    try:
+        price = price.quantize(Decimal("0.01"))
+    except InvalidOperation as exc:
+        raise ApiError("price_azn has too many decimal places", 422, "validation_error") from exc
     parsed = urlparse(image_url)
-    if price < 0 or stock < 0:
-        raise ApiError("Price and stock cannot be negative", 422, "validation_error")
     if parsed.scheme not in {"http", "https"} or not parsed.netloc:
         raise ApiError("image_url must be an http(s) URL", 422, "validation_error")
     if (parsed.hostname or "").lower() not in IMAGE_SOURCE_HOSTS:
@@ -154,14 +227,19 @@ def _product_payload(data):
             422,
             "image_source_not_allowed",
         )
+    description = data.get("description", "")
+    if description is None:
+        description = ""
+    if not isinstance(description, str):
+        raise ApiError("description must be text", 422, "validation_error")
     return {
-        "name": str(data["name"]).strip(),
+        "name": name,
         "category": category,
-        "price_azn": price.quantize(Decimal("0.01")),
+        "price_azn": price,
         "stock": stock,
-        "season": str(data["season"]).strip(),
+        "season": season,
         "image_url": image_url,
-        "description": str(data.get("description", "")).strip(),
+        "description": description.strip(),
     }
 
 
@@ -228,6 +306,10 @@ def _farmer_owns_order(order, user_id):
     return any(item.product.farmer_id == user_id for item in order.items)
 
 
+def _order_for_update(order_id):
+    return Order.query.filter_by(id=order_id).with_for_update().first()
+
+
 def _transition(order, target, actor):
     if target not in ORDER_STATUSES:
         raise ApiError("Unknown order status", 422, "validation_error")
@@ -256,6 +338,9 @@ def _transition(order, target, actor):
 def _commit():
     try:
         db.session.commit()
+    except IntegrityError as exc:
+        db.session.rollback()
+        raise ApiError("The operation conflicts with current data", 409, "conflict") from exc
     except Exception:
         db.session.rollback()
         raise
@@ -271,13 +356,15 @@ def register_customer():
 @api.post("/auth/register/farmer")
 def register_farmer():
     data = _data()
-    _required(data, "farm_name", "region", "document_reference")
+    farm_name = _text(data, "farm_name", 160)
+    region = _text(data, "region", 120)
+    document_reference = _text(data, "document_reference", 255)
     user = _create_user(data, "farmer")
     profile = FarmerProfile(
         user_id=user.id,
-        farm_name=str(data["farm_name"]).strip(),
-        region=str(data["region"]).strip(),
-        document_reference=str(data["document_reference"]).strip(),
+        farm_name=farm_name,
+        region=region,
+        document_reference=document_reference,
         verification_status="pending_verification",
     )
     db.session.add(profile)
@@ -288,12 +375,15 @@ def register_farmer():
 @api.post("/auth/login")
 def login():
     data = _data()
-    _required(data, "email", "password")
-    user = User.query.filter_by(email=_normal_email(data["email"])).first()
-    if not user or not user.check_password(data["password"]):
+    email = _text(data, "email", 255).lower()
+    password = _text(data, "password", 200)
+    user = User.query.filter_by(email=email).first()
+    if not user or not user.check_password(password):
         raise ApiError("Invalid email or password", 401, "invalid_credentials")
-    if user.account_status == "suspended":
-        raise ApiError("Account is suspended", 403, "account_suspended")
+    if user.account_status != "active":
+        if user.account_status == "suspended":
+            raise ApiError("Account is suspended", 403, "account_suspended")
+        raise ApiError("Account is not active", 403, "account_inactive")
     return jsonify(_auth_payload(user))
 
 
@@ -314,7 +404,17 @@ def meta():
 
 @api.get("/products")
 def products():
-    query = Product.query.join(User).join(FarmerProfile).filter(Product.available.is_(True), Product.stock > 0)
+    query = (
+        Product.query
+        .join(User, Product.farmer_id == User.id)
+        .join(FarmerProfile, FarmerProfile.user_id == User.id)
+        .filter(
+            Product.available.is_(True),
+            Product.stock > 0,
+            User.account_status == "active",
+            FarmerProfile.verification_status == "approved",
+        )
+    )
     category = request.args.get("category")
     if category:
         if category not in ALLOWED_CATEGORIES:
@@ -336,8 +436,19 @@ def products():
 
 @api.get("/products/<int:product_id>")
 def product_detail(product_id):
-    product = db.session.get(Product, product_id)
-    if not product or not product.available:
+    product = (
+        Product.query
+        .join(User, Product.farmer_id == User.id)
+        .join(FarmerProfile, FarmerProfile.user_id == User.id)
+        .filter(
+            Product.id == product_id,
+            Product.available.is_(True),
+            User.account_status == "active",
+            FarmerProfile.verification_status == "approved",
+        )
+        .first()
+    )
+    if not product:
         raise ApiError("Product not found", 404, "not_found")
     payload = product.to_dict()
     payload["reviews"] = [review.to_dict() for review in product.reviews]
@@ -378,22 +489,37 @@ def create_order():
     _required(data, "items", "delivery_address", "payment_method")
     if not isinstance(data["items"], list) or not data["items"]:
         raise ApiError("At least one basket item is required", 422, "validation_error")
-    if data["payment_method"] not in {"cash_on_delivery", "card_sandbox"}:
+    delivery_address = _text(data, "delivery_address", 255)
+    payment_method = data["payment_method"]
+    if not isinstance(payment_method, str) or payment_method not in {"cash_on_delivery", "card_sandbox"}:
         raise ApiError("Choose cash_on_delivery or card_sandbox", 422, "validation_error")
     quantities = {}
     for item in data["items"]:
+        if not isinstance(item, dict):
+            raise ApiError("Each basket item must be an object", 422, "validation_error")
         try:
             product_id = int(item["product_id"])
             quantity = int(item["quantity"])
-        except (KeyError, TypeError, ValueError):
+        except (KeyError, TypeError, ValueError, OverflowError):
             raise ApiError("Each item needs a product_id and whole-number quantity", 422, "validation_error")
-        if quantity < 1:
+        if isinstance(item["product_id"], bool) or isinstance(item["quantity"], bool) or quantity < 1:
             raise ApiError("Item quantities must be at least one", 422, "validation_error")
         quantities[product_id] = quantities.get(product_id, 0) + quantity
 
     products_by_id = {
         product.id: product
-        for product in Product.query.filter(Product.id.in_(quantities.keys())).all()
+        for product in (
+            Product.query
+            .join(User, Product.farmer_id == User.id)
+            .join(FarmerProfile, FarmerProfile.user_id == User.id)
+            .filter(
+                Product.id.in_(quantities.keys()),
+                User.account_status == "active",
+                FarmerProfile.verification_status == "approved",
+            )
+            .with_for_update()
+            .all()
+        )
     }
     if len(products_by_id) != len(quantities):
         raise ApiError("One or more products were not found", 404, "product_not_found")
@@ -414,9 +540,9 @@ def create_order():
         customer_id=user.id,
         status="placed",
         total_azn=total.quantize(Decimal("0.01")),
-        delivery_address=str(data["delivery_address"]).strip(),
-        payment_method=data["payment_method"],
-        payment_status="sandbox_approved" if data["payment_method"] == "card_sandbox" else "cash_due",
+        delivery_address=delivery_address,
+        payment_method=payment_method,
+        payment_status="sandbox_approved" if payment_method == "card_sandbox" else "cash_due",
     )
     db.session.add(order)
     db.session.flush()
@@ -460,7 +586,7 @@ def customer_order_detail(order_id):
 @role_required("customer")
 def mark_delivered(order_id):
     user = _current_user()
-    order = db.session.get(Order, order_id)
+    order = _order_for_update(order_id)
     if not order or order.customer_id != user.id:
         raise ApiError("Order not found", 404, "not_found")
     _transition(order, "delivered", user)
@@ -512,8 +638,8 @@ def create_dispute(order_id):
     if not order or order.customer_id != user.id:
         raise ApiError("Order not found", 404, "not_found")
     data = _data()
-    _required(data, "reason")
-    flag = DisputeFlag(order_id=order.id, raised_by_id=user.id, reason=str(data["reason"]).strip())
+    reason = _text(data, "reason", 255)
+    flag = DisputeFlag(order_id=order.id, raised_by_id=user.id, reason=reason)
     db.session.add(flag)
     _commit()
     return jsonify({"dispute": flag.to_dict()}), 201
@@ -559,9 +685,10 @@ def farmer_listings():
 @role_required("farmer")
 def create_listing():
     user = _current_user()
+    _ensure_can_publish(user)
     data = _data()
     payload = _product_payload(data)
-    _ensure_can_publish(user)
+    _verify_image_url(payload["image_url"])
     product = Product(farmer_id=user.id, **payload)
     db.session.add(product)
     _commit()
@@ -573,12 +700,13 @@ def create_listing():
 @role_required("farmer")
 def update_listing(product_id):
     user = _current_user()
-    data = _data()
-    payload = _product_payload(data)
     _ensure_can_publish(user)
     product = db.session.get(Product, product_id)
     if not product or product.farmer_id != user.id:
         raise ApiError("Listing not found", 404, "not_found")
+    data = _data()
+    payload = _product_payload(data)
+    _verify_image_url(payload["image_url"])
     for key, value in payload.items():
         setattr(product, key, value)
     _commit()
@@ -612,7 +740,7 @@ def farmer_orders():
 @role_required("farmer")
 def farmer_confirm(order_id):
     user = _current_user()
-    order = db.session.get(Order, order_id)
+    order = _order_for_update(order_id)
     if not order or not _farmer_owns_order(order, user.id):
         raise ApiError("Order not found", 404, "not_found")
     _transition(order, "confirmed", user)
@@ -625,7 +753,7 @@ def farmer_confirm(order_id):
 @role_required("farmer")
 def farmer_harvested(order_id):
     user = _current_user()
-    order = db.session.get(Order, order_id)
+    order = _order_for_update(order_id)
     if not order or not _farmer_owns_order(order, user.id):
         raise ApiError("Order not found", 404, "not_found")
     _transition(order, "harvested", user)
@@ -757,8 +885,7 @@ def admin_categories():
 @role_required("admin")
 def create_category():
     data = _data()
-    _required(data, "name")
-    name = str(data["name"]).strip()
+    name = _text(data, "name", 80)
     if name not in ALLOWED_CATEGORIES:
         raise ApiError("Category is outside the agricultural catalog", 422, "invalid_category")
     category = Category.query.filter_by(name=name).first()
@@ -795,8 +922,7 @@ def admin_regions():
 @role_required("admin")
 def create_region():
     data = _data()
-    _required(data, "name")
-    name = str(data["name"]).strip()
+    name = _text(data, "name", 120)
     if len(name) < 2:
         raise ApiError("Region name is too short", 422, "validation_error")
     region = Region.query.filter_by(name=name).first()
@@ -834,7 +960,7 @@ def admin_orders():
 @role_required("admin")
 def admin_in_transit(order_id):
     user = _current_user()
-    order = db.session.get(Order, order_id)
+    order = _order_for_update(order_id)
     if not order:
         raise ApiError("Order not found", 404, "not_found")
     _transition(order, "in_transit", user)
