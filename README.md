@@ -12,6 +12,14 @@ The repo splits into five parts:
 
 ## Quickstart
 
+One command drives everything from the repo root:
+
+```bash
+./bazaario dev
+```
+
+That starts the API on `127.0.0.1:5050` and the frontend on `127.0.0.1:5173`; Ctrl-C stops both. From a fresh clone, run `./bazaario setup && ./bazaario seed` first. Other subcommands: `api`, `web`, `seed`, `test`, `build`, `images`, `status`.
+
 ### 1. Python API
 
 ```bash

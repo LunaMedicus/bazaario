@@ -1,0 +1,85 @@
+#!/usr/bin/env bash
+# Bazaario quick-start control script.
+# Usage: ./bazaario <command>
+#   setup    first-time install: python venv + pip + npm
+#   seed     reset and seed the database (verifies all product images first)
+#   api      run the Flask API on 127.0.0.1:5050
+#   web      run the Vite frontend on 127.0.0.1:5173
+#   dev      run api + web together; Ctrl-C stops both
+#   test     run the pytest suite
+#   build    production build of the frontend
+#   images   verify seeded image URLs only
+#   status   show whether the api and web ports are responding
+set -euo pipefail
+cd "$(dirname "$0")"
+
+API_PORT="${BAZAARIO_API_PORT:-5050}"
+WEB_PORT="${BAZAARIO_WEB_PORT:-5173}"
+PY=".venv/bin/python"
+
+need_venv() {
+  [ -x "$PY" ] || { echo "No virtualenv yet. Run: ./bazaario setup"; exit 1; }
+}
+
+case "${1:-help}" in
+  setup)
+    python3 -m venv .venv
+    .venv/bin/pip install -q -r requirements.txt
+    (cd frontend && npm install)
+    echo "Setup complete. Next: ./bazaario seed && ./bazaario dev"
+    ;;
+  seed)
+    need_venv
+    "$PY" seed.py
+    ;;
+  api)
+    need_venv
+    exec "$PY" -m flask --app backend.bazaario run --host 127.0.0.1 --port "$API_PORT"
+    ;;
+  web)
+    [ -d frontend/node_modules ] || { echo "Frontend deps missing. Run: ./bazaario setup"; exit 1; }
+    cd frontend
+    exec env VITE_API_URL="http://127.0.0.1:${API_PORT}/api" \
+      npm run dev -- --host 127.0.0.1 --port "$WEB_PORT"
+    ;;
+  dev)
+    need_venv
+    [ -d frontend/node_modules ] || { echo "Frontend deps missing. Run: ./bazaario setup"; exit 1; }
+    trap 'kill 0' EXIT INT TERM
+    "$PY" -m flask --app backend.bazaario run --host 127.0.0.1 --port "$API_PORT" &
+    API_PID=$!
+    (cd frontend && exec env VITE_API_URL="http://127.0.0.1:${API_PORT}/api" \
+      npm run dev -- --host 127.0.0.1 --port "$WEB_PORT") &
+    WEB_PID=$!
+    echo "api  -> http://127.0.0.1:${API_PORT}/api"
+    echo "web  -> http://127.0.0.1:${WEB_PORT}"
+    echo "Ctrl-C stops both."
+    wait
+    ;;
+  test)
+    need_venv
+    exec "$PY" -m pytest tests/ -q
+    ;;
+  build)
+    [ -d frontend/node_modules ] || { echo "Frontend deps missing. Run: ./bazaario setup"; exit 1; }
+    cd frontend && exec npm run build
+    ;;
+  images)
+    need_venv
+    exec "$PY" scripts/check_images.py
+    ;;
+  status)
+    for name_port in "api:${API_PORT}" "web:${WEB_PORT}"; do
+      name="${name_port%%:*}"; port="${name_port##*:}"
+      code=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:${port}/" || true)
+      if [ "$code" = "000" ]; then
+        echo "$name (port $port): down"
+      else
+        echo "$name (port $port): up (HTTP $code)"
+      fi
+    done
+    ;;
+  help|*)
+    sed -n '2,13p' "$0"
+    ;;
+esac
