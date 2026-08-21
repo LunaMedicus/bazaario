@@ -181,7 +181,7 @@ def test_customers_and_farmers_exchange_product_messages(client, auth_tokens):
         "/api/products/1/messages",
         headers=bearer(auth_tokens["farmer"]),
         json={
-            "body": "Yes — call me to arrange pickup.",
+            "body": "Yes, call me to arrange pickup.",
             "customer_id": target["customer_id"],
         },
     )
@@ -193,7 +193,7 @@ def test_customers_and_farmers_exchange_product_messages(client, auth_tokens):
     bodies = [message["body"] for message in transcript.get_json()["messages"]]
     assert bodies == [
         "Is this harvest available this week?",
-        "Yes — call me to arrange pickup.",
+        "Yes, call me to arrange pickup.",
     ]
 
     other = client.post(

@@ -1,14 +1,14 @@
 # Bazaario
 
-Bazaario is a farmer-to-customer marketplace for agricultural products from Azerbaijan. It is intentionally limited to eight catalog categories: **Fruit, Vegetables, Grains, Dairy, Honey & bee products, Herbs, Nuts, and Tea**.
+Bazaario is a farmer-to-customer marketplace for agricultural products from Azerbaijan. It covers eight categories only: Fruit, Vegetables, Grains, Dairy, Honey & bee products, Herbs, Nuts and Tea.
 
-The repository is a production-shaped vertical slice:
+The repo splits into five parts:
 
-- `backend/` — Flask REST API, SQLAlchemy models, JWT claims, role gates, order invariants
-- `frontend/` — React + Vite customer, farmer, and admin surfaces
-- `scripts/check_images.py` — verifies every seeded image URL before seeding
-- `seed.py` — one reset-and-seed command
-- `tests/` — API behavior and lifecycle tests
+- `backend/` holds the Flask REST API, SQLAlchemy models, JWT claims, role gates and order lifecycle checks.
+- `frontend/` holds the React (Vite) app for customers, farmers and admins.
+- `scripts/check_images.py` verifies every seeded image URL before seeding runs.
+- `seed.py` resets and seeds the database in one command.
+- `tests/` covers API behavior and the order lifecycle.
 
 ## Quickstart
 
@@ -23,7 +23,7 @@ python seed.py
 flask run
 ```
 
-`flask run` serves the API at `http://localhost:5000`. The default `.env.example` uses a local SQLite file so the first boot is self-contained. The app also supports PostgreSQL through the same `DATABASE_URL` setting; see the PostgreSQL section below.
+`flask run` serves the API at `http://localhost:5000`. The default `.env.example` uses a local SQLite file so the first boot needs nothing else. The same `DATABASE_URL` setting accepts PostgreSQL; see the next section.
 
 ### 2. React frontend
 
@@ -54,7 +54,7 @@ python seed.py
 flask run
 ```
 
-The Compose database is bound to loopback only and refuses to start without an explicit password. `Flask-SQLAlchemy` uses PostgreSQL in this mode through `psycopg`. SQLite is only the zero-setup development fallback; the application does not use an alternate persistence layer.
+Compose binds the database to loopback and refuses to start without an explicit password. `Flask-SQLAlchemy` talks to PostgreSQL in this mode through `psycopg`. SQLite stays the zero-setup development fallback.
 
 ## Demo accounts
 
@@ -66,18 +66,18 @@ The Compose database is bound to loopback only and refuses to start without an e
 | Farmer | `farmer@bazaario.az` | `FarmerDemo!2026` | approved farm listings, incoming orders, earnings |
 | Customer | `customer@bazaario.az` | `CustomerDemo!2026` | catalog, basket, checkout, tracking, reviews |
 
-Admin accounts are created only in `seed.py`; there is no public admin registration route.
+Only `seed.py` creates admin accounts; there is no public admin registration route.
 
 ## Roles and security boundaries
 
-Every JWT contains `role` and `account_status` claims. Protected route groups use a role decorator before endpoint business logic. A valid token with the wrong role receives a JSON `403` with `error: "forbidden"`.
+Every JWT carries `role` and `account_status` claims. Protected route groups pass a role decorator before any endpoint logic. A valid token with the wrong role gets a JSON `403` with `error: "forbidden"`.
 
 - Customer: `/api/customer/*`
 - Farmer: `/api/farmer/*`
 - Admin: `/api/admin/*`
 - Public: `/api/auth/register/customer`, `/api/auth/register/farmer`, `/api/auth/login`, `/api/products`, `/api/meta`
 
-Farmer signup creates a `FarmerProfile` with `pending_verification`. Listing create/update/archive checks the profile status and returns `403` with `code: "farmer_verification_required"` until an admin approves it. Suspending a farmer also suspends the account; suspended or unapproved farms are excluded from the public catalog and checkout. Every farmer-submitted listing URL is checked live for an HTTP 200 `image/*` response from an approved image host.
+Farmer signup creates a `FarmerProfile` with `pending_verification`. Listing create, update and archive return `403` with `code: "farmer_verification_required"` until an admin approves the profile. Suspending a farmer suspends the account too, and suspended or unapproved farms disappear from the public catalog and cannot be bought from. The API checks every farmer-submitted image URL live for an HTTP 200 `image/*` response from an approved host.
 
 ## Order lifecycle invariant
 
@@ -95,22 +95,23 @@ placed → confirmed → harvested → in_transit → delivered
 | `harvested → in_transit` | admin / courier surface | `POST /api/admin/orders/:id/in-transit` |
 | `in_transit → delivered` | customer who placed the order | `POST /api/customer/orders/:id/delivered` |
 
-A transition with a skip, repeat, or backwards move returns `409` with `code: "invalid_transition"`. Every transition writes one `order_audits` row with actor, role, previous state, next state, and a UTC timestamp. The initial placement is also an audit row, so a completed order has exactly five audit rows.
+A skip, repeat or backwards move returns `409` with `code: "invalid_transition"`. Every transition writes one `order_audits` row with actor, role, previous state, next state and a UTC timestamp. The initial placement writes an audit row too, so a completed order has exactly five.
 
-Checkout supports cash-on-delivery and a deterministic `card_sandbox` authorization stub. Stock is checked and reserved when the order is placed. Reviews are rejected until the customer marks the order delivered and can only reference products from that order.
+Checkout supports cash-on-delivery and a deterministic `card_sandbox` authorization stub. Checkout checks and reserves stock when the order is placed. The API rejects reviews until the customer marks the order delivered, and a review can only reference products from that order.
 
-## Direct seller contact: messages and calls
+## Direct seller contact
 
-Bazaario has no logistics or delivery hubs. Fulfilment is arranged directly between the customer and the farm, so every product page carries two contact paths:
+There are no delivery hubs. Buyers deal with the farm directly, so every product page has two ways to reach the seller.
 
-- **Message the seller** — a per-product thread between one customer and the farm. Customers start it from the product page (`POST /api/products/:id/messages`); farmers reply into the same thread with `customer_id` (threads must be customer-initiated). Each side sees its inbox on the dashboard (`GET /api/customer/messages`, `GET /api/farmer/messages`) and the full transcript under `GET /api/products/:id/messages`. Access control: customers read only their own threads, farmers only their own products, admins are refused, and empty bodies return 422.
-- **Call the seller** — each farmer profile has an optional `phone` number, editable from the farmer dashboard (`PUT /api/farmer/phone`, validated: digits, `+`, spaces, parentheses, hyphens; blank clears it) and optional at farmer signup. It is exposed on every product payload as `farm.phone` and rendered as a `tel:` call button. Seeded demo farms all carry plausible +994 numbers.
+**Message the seller.** One thread per product per customer. Customers start it on the product page with `POST /api/products/:id/messages`; farmers reply into the same thread by passing `customer_id`. Each dashboard has an inbox (`GET /api/customer/messages`, `GET /api/farmer/messages`), and `GET /api/products/:id/messages` returns the full transcript. Customers read only their own threads, farmers only threads on their own products, admins get refused, and empty bodies return 422.
+
+**Call the seller.** Farmer profiles carry an optional `phone`. Farmers set it from their dashboard (`PUT /api/farmer/phone`) or at signup. The number accepts digits, `+`, spaces, parentheses and hyphens; blank clears it. Every product payload includes it as `farm.phone`, and the frontend renders it as a `tel:` link. Seeded farms ship with plausible +994 numbers.
 
 ## Agricultural catalog and image gate
 
-Product categories are enforced by the API against the fixed agricultural allow-list. A non-agricultural category (for example, `Electronics`) returns `422` with `code: "invalid_category"`. Admin category management can activate/deactivate only the same eight allowed categories; arbitrary categories cannot be created. Farmer listing images are constrained to hotlinkable Unsplash, Pexels, or Wikimedia Commons hosts, while the seed gate additionally verifies the live response content type.
+The API rejects any category outside the agricultural allow-list. A non-agricultural category such as `Electronics` gets `422` with `code: "invalid_category"`. Admin category management can activate or deactivate only the same eight categories; arbitrary ones cannot be created. Farmer listing images must come from Unsplash, Pexels or Wikimedia Commons hosts, and the seed gate additionally verifies the live response content type.
 
-The seed has 10 farms across Goychay, Lankaran, Qabala, Sheki, Astara, Zagatala, and Shamkir, plus 41 agricultural listings with realistic AZN prices and season windows. Seed photos are direct Wikimedia Commons image URLs. No placeholders or generated artwork are used.
+The seed covers 10 farms across Goychay, Lankaran, Qabala, Sheki, Astara, Zagatala and Shamkir, plus 41 listings with realistic AZN prices and season windows. Seeded photos use direct Wikimedia Commons URLs, no placeholders.
 
 Run the verification independently at any time:
 
@@ -119,7 +120,7 @@ Run the verification independently at any time:
 # PASS: 41 seeded image URLs returned HTTP 200 with image/* content-type
 ```
 
-`seed.py` calls the same verifier first and refuses to drop or modify the database if any seeded image fails. The verifier follows redirects, checks the final HTTP status and `image/*` content type, and retries transient Wikimedia `429` responses.
+`seed.py` calls the same verifier first and refuses to touch the database if any seeded image fails. The verifier follows redirects, checks the final HTTP status and `image/*` content type, and retries transient Wikimedia `429` responses.
 
 ## API verification
 
@@ -129,7 +130,7 @@ Run the automated suite:
 .venv/bin/python -m pytest tests/ -q
 ```
 
-The tests cover JWT role identity, wrong-role `403` responses, open customer signup, admin registration absence, pending farmer publish blocking, category `422`, catalog filters, order transition sequencing, and the exact five-row audit invariant.
+The tests cover JWT role identity, wrong-role `403` responses, open customer signup, the missing admin registration route, pending farmer publish blocking, category `422`, catalog filters, order transition sequencing, the exact five-row audit invariant, message threads and phone validation.
 
 A manual smoke flow after starting `flask run`:
 
@@ -142,11 +143,13 @@ A manual smoke flow after starting `flask run`:
 
 ## Frontend surfaces
 
-- **Customer:** searchable gallery, category/region/season filters, product detail with farm source, local basket, checkout, five-state tracking timeline, delivery-gated review and dispute flag.
-- **Farmer:** verification banner, listing CRUD form with agricultural category enforcement, stock and season fields, incoming order accept/harvest actions, delivered earnings summary.
-- **Admin:** pending verification queue, approval/suspension, user suspend/restore, order oversight and transit action, dispute resolution surface. API endpoints also expose category and region management.
+Customers search and filter the catalog by category, region and season, browse product pages that show the source farm, keep a local basket, check out, track orders through five states, and can review or flag a dispute once delivery is confirmed.
 
-The visual system is deliberately restrained: `#FBFAF7` cream ground, `#111` ink, thin black rules, flat `#FF6B00` orange and `#00A651` green accents, Space Grotesk/Helvetica typography, gallery spacing, and no gradients or glass effects.
+Farmers see a verification banner before approval, manage listings through a form that enforces the category allow-list, set stock and season windows, accept and harvest incoming orders, publish their contact number, and watch delivered earnings.
+
+Admins work a pending-farmer queue, approve or suspend farms, suspend or restore users, move orders in transit, and resolve disputes. Category and region management exists at the API level.
+
+The UI keeps to a cream ground (`#FBFAF7`), near-black ink, thin rules, flat orange (`#FF6B00`) and green (`#00A651`) accents, and Space Grotesk/Helvetica type. No gradients, no glass effects.
 
 ## Repository commands
 
