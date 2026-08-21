@@ -4,11 +4,11 @@ Bazaario is a farmer-to-customer marketplace for agricultural products from Azer
 
 The repo splits into five parts:
 
-- `backend/` holds the Flask REST API, SQLAlchemy models, JWT claims, role gates and order lifecycle checks.
+- `backend/` holds the Flask REST API, SQLAlchemy models, JWT claims and role gates.
 - `frontend/` holds the React (Vite) app for customers, farmers and admins.
 - `scripts/check_images.py` verifies every seeded image URL before seeding runs.
 - `seed.py` resets and seeds the database in one command.
-- `tests/` covers API behavior and the order lifecycle.
+- `tests/` covers API behavior, messaging, reviews and access control.
 
 ## Quickstart
 
@@ -70,9 +70,9 @@ Compose binds the database to loopback and refuses to start without an explicit 
 
 | Role | Email | Password | Access |
 | --- | --- | --- | --- |
-| Admin | `admin@bazaario.az` | `AdminDemo!2026` | verification, categories, regions, users, orders, disputes |
-| Farmer | `farmer@bazaario.az` | `FarmerDemo!2026` | approved farm listings, incoming orders, earnings |
-| Customer | `customer@bazaario.az` | `CustomerDemo!2026` | catalog, basket, checkout, tracking, reviews |
+| Admin | `admin@bazaario.az` | `AdminDemo!2026` | verification, categories, regions, users |
+| Farmer | `farmer@bazaario.az` | `FarmerDemo!2026` | approved farm listings, contact number, buyer messages |
+| Customer | `customer@bazaario.az` | `CustomerDemo!2026` | catalog, seller messaging, product reviews |
 
 Only `seed.py` creates admin accounts; there is no public admin registration route.
 
@@ -87,25 +87,9 @@ Every JWT carries `role` and `account_status` claims. Protected route groups pas
 
 Farmer signup creates a `FarmerProfile` with `pending_verification`. Listing create, update and archive return `403` with `code: "farmer_verification_required"` until an admin approves the profile. Suspending a farmer suspends the account too, and suspended or unapproved farms disappear from the public catalog and cannot be bought from. The API checks every farmer-submitted image URL live for an HTTP 200 `image/*` response from an approved host.
 
-## Order lifecycle invariant
+## Reviews
 
-The only valid state sequence is:
-
-```text
-placed → confirmed → harvested → in_transit → delivered
-```
-
-| Transition | Owner | API |
-| --- | --- | --- |
-| create `placed` | customer | `POST /api/customer/orders` |
-| `placed → confirmed` | farmer owning the order's listing | `POST /api/farmer/orders/:id/confirm` |
-| `confirmed → harvested` | farmer owning the order's listing | `POST /api/farmer/orders/:id/harvested` |
-| `harvested → in_transit` | admin / courier surface | `POST /api/admin/orders/:id/in-transit` |
-| `in_transit → delivered` | customer who placed the order | `POST /api/customer/orders/:id/delivered` |
-
-A skip, repeat or backwards move returns `409` with `code: "invalid_transition"`. Every transition writes one `order_audits` row with actor, role, previous state, next state and a UTC timestamp. The initial placement writes an audit row too, so a completed order has exactly five.
-
-Checkout supports cash-on-delivery and a deterministic `card_sandbox` authorization stub. Checkout checks and reserves stock when the order is placed. The API rejects reviews until the customer marks the order delivered, and a review can only reference products from that order.
+Buying on Bazaario is agreement based: there are no baskets, checkout or order records. Customers contact the farm and settle the deal directly. Each signed-in customer can leave one review per product with `POST /api/products/:id/reviews`; posting again updates their existing review. Ratings run from 1 to 5, the product payload carries the average and count, and farmers and admins cannot post reviews.
 
 ## Direct seller contact
 
@@ -138,24 +122,22 @@ Run the automated suite:
 .venv/bin/python -m pytest tests/ -q
 ```
 
-The tests cover JWT role identity, wrong-role `403` responses, open customer signup, the missing admin registration route, pending farmer publish blocking, category `422`, catalog filters, order transition sequencing, the exact five-row audit invariant, message threads and phone validation.
+The tests cover JWT role identity, wrong-role `403` responses, open customer signup, the missing admin registration route, pending farmer publish blocking, category `422`, catalog filters, per-product reviews, message threads and phone validation.
 
 A manual smoke flow after starting `flask run`:
 
 1. Log in as each demo account; each lands on its role-specific `/dashboard` view.
-2. As customer, add a product to the basket and choose cash or sandbox card checkout.
-3. As the owning farmer, accept the order and mark it harvested.
-4. As admin, mark it in transit.
-5. As customer, confirm delivered; the review action then unlocks.
-6. Use the admin verification queue to approve or suspend a new farmer application.
+2. As customer, open a product, message the farm and leave a review.
+3. Call or message details appear straight on the product page; there is no checkout step.
+4. Use the admin verification queue to approve or suspend a new farmer application.
 
 ## Frontend surfaces
 
-Customers search and filter the catalog by category, region and season, browse product pages that show the source farm, keep a local basket, check out, track orders through five states, and can review or flag a dispute once delivery is confirmed.
+Customers search and filter the catalog by category, region and season, open product pages that show the source farm, price and season window, message the farm, call it, and leave one review per product.
 
-Farmers see a verification banner before approval, manage listings through a form that enforces the category allow-list, set stock and season windows, accept and harvest incoming orders, publish their contact number, and watch delivered earnings.
+Farmers see a verification banner before approval, manage listings through a form that enforces the category allow-list, set stock and season windows, publish their contact number, and answer buyer messages from an inbox.
 
-Admins work a pending-farmer queue, approve or suspend farms, suspend or restore users, move orders in transit, and resolve disputes. Category and region management exists at the API level.
+Admins work a pending-farmer queue, approve or suspend farms, suspend or restore users, and manage categories and regions.
 
 The UI keeps to a cream ground (`#FBFAF7`), near-black ink, thin rules, flat orange (`#FF6B00`) and green (`#00A651`) accents, and Space Grotesk/Helvetica type. No gradients, no glass effects.
 

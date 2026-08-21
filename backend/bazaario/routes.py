@@ -16,15 +16,8 @@ from sqlalchemy.exc import IntegrityError
 
 from .extensions import db
 from .models import (
-    ALLOWED_CATEGORIES,
-    ALLOWED_ROLES,
-    ORDER_STATUSES,
     Category,
-    DisputeFlag,
     FarmerProfile,
-    Order,
-    OrderAudit,
-    OrderItem,
     Message,
     Product,
     Region,
@@ -35,6 +28,16 @@ from .models import (
 
 
 api = Blueprint("api", __name__)
+ALLOWED_CATEGORIES = (
+    "Fruit",
+    "Vegetables",
+    "Grains",
+    "Dairy",
+    "Honey & bee products",
+    "Herbs",
+    "Nuts",
+    "Tea",
+)
 IMAGE_SOURCE_HOSTS = {
     "images.unsplash.com",
     "images.pexels.com",
@@ -265,88 +268,6 @@ def _ensure_can_publish(user):
         )
 
 
-def _order_dict(order):
-    return {
-        "id": order.id,
-        "status": order.status,
-        "total_azn": float(order.total_azn or Decimal("0")),
-        "delivery_address": order.delivery_address,
-        "payment_method": order.payment_method,
-        "payment_status": order.payment_status,
-        "created_at": order.created_at.isoformat() if order.created_at else None,
-        "updated_at": order.updated_at.isoformat() if order.updated_at else None,
-        "customer": {
-            "id": order.customer.id,
-            "name": order.customer.display_name,
-            "email": order.customer.email,
-        }
-        if order.customer
-        else None,
-        "items": [
-            {
-                "id": item.id,
-                "product_id": item.product_id,
-                "name": item.product.name,
-                "quantity": item.quantity,
-                "unit_price_azn": float(item.unit_price_azn or Decimal("0")),
-                "line_total_azn": float(
-                    (item.unit_price_azn or Decimal("0")) * item.quantity
-                ),
-                "farmer_id": item.product.farmer_id,
-                "farm_name": item.product.farmer.farmer_profile.farm_name
-                if item.product.farmer and item.product.farmer.farmer_profile
-                else None,
-            }
-            for item in order.items
-        ],
-        "audit": [audit.to_dict() for audit in order.audits],
-        "reviews": [review.to_dict() for review in order.reviews],
-    }
-
-
-def _farmer_order_query(user_id):
-    return (
-        Order.query.join(OrderItem)
-        .join(Product)
-        .filter(Product.farmer_id == user_id)
-        .distinct()
-        .order_by(Order.created_at.desc())
-    )
-
-
-def _farmer_owns_order(order, user_id):
-    return any(item.product.farmer_id == user_id for item in order.items)
-
-
-def _order_for_update(order_id):
-    return Order.query.filter_by(id=order_id).with_for_update().first()
-
-
-def _transition(order, target, actor):
-    if target not in ORDER_STATUSES:
-        raise ApiError("Unknown order status", 422, "validation_error")
-    target_index = ORDER_STATUSES.index(target)
-    expected_from = ORDER_STATUSES[target_index - 1] if target_index else None
-    if order.status != expected_from:
-        raise ApiError(
-            f"Order must be {expected_from or 'new'} before it can become {target}",
-            409,
-            "invalid_transition",
-        )
-    previous = order.status
-    order.status = target
-    order.updated_at = utc_now()
-    db.session.add(
-        OrderAudit(
-            order=order,
-            actor_id=actor.id,
-            actor_role=actor.role,
-            from_status=previous,
-            to_status=target,
-        )
-    )
-
-
 def _commit():
     try:
         db.session.commit()
@@ -468,194 +389,69 @@ def product_detail(product_id):
     return jsonify({"product": payload})
 
 
+@api.post("/products/<int:product_id>/reviews")
+@jwt_required()
+@role_required("customer")
+def create_product_review(product_id):
+    user = _current_user()
+    product = (
+        Product.query
+        .join(User, Product.farmer_id == User.id)
+        .join(FarmerProfile, FarmerProfile.user_id == User.id)
+        .filter(
+            Product.id == product_id,
+            User.account_status == "active",
+            FarmerProfile.verification_status == "approved",
+        )
+        .first()
+    )
+    if not product:
+        raise ApiError("Product not found", 404, "not_found")
+    data = _data()
+    _required(data, "rating")
+    try:
+        rating = int(data["rating"])
+    except (TypeError, ValueError):
+        raise ApiError("rating must be an integer", 422, "validation_error")
+    if rating < 1 or rating > 5:
+        raise ApiError("rating must be between 1 and 5", 422, "validation_error")
+    body = data.get("body", "")
+    if body is None:
+        body = ""
+    if not isinstance(body, str):
+        raise ApiError("body must be text", 422, "validation_error")
+    existing = Review.query.filter_by(product_id=product.id, customer_id=user.id).first()
+    if existing:
+        existing.rating = rating
+        existing.body = body.strip()
+        review = existing
+    else:
+        review = Review(
+            product_id=product.id,
+            customer_id=user.id,
+            rating=rating,
+            body=body.strip(),
+        )
+        db.session.add(review)
+    _commit()
+    return jsonify({"review": review.to_dict()}), 201
+
+
 @api.get("/customer/dashboard")
 @jwt_required()
 @role_required("customer")
 def customer_dashboard():
     user = _current_user()
-    recent = Order.query.filter_by(customer_id=user.id).order_by(Order.created_at.desc()).limit(5).all()
     return jsonify(
         {
             "user": user.to_dict(),
-            "order_count": Order.query.filter_by(customer_id=user.id).count(),
-            "recent_orders": [_order_dict(order) for order in recent],
             "catalog_count": Product.query.filter_by(available=True).count(),
+            "message_thread_count": Message.query.filter_by(customer_id=user.id)
+            .with_entities(Message.product_id, Message.customer_id)
+            .distinct()
+            .count(),
         }
     )
-
-
-@api.get("/customer/orders")
-@jwt_required()
-@role_required("customer")
-def customer_orders():
-    user = _current_user()
-    orders = Order.query.filter_by(customer_id=user.id).order_by(Order.created_at.desc()).all()
-    return jsonify({"orders": [_order_dict(order) for order in orders]})
-
-
-@api.post("/customer/orders")
-@jwt_required()
-@role_required("customer")
-def create_order():
-    user = _current_user()
-    data = _data()
-    _required(data, "items", "delivery_address", "payment_method")
-    if not isinstance(data["items"], list) or not data["items"]:
-        raise ApiError("At least one basket item is required", 422, "validation_error")
-    delivery_address = _text(data, "delivery_address", 255)
-    payment_method = data["payment_method"]
-    if not isinstance(payment_method, str) or payment_method not in {"cash_on_delivery", "card_sandbox"}:
-        raise ApiError("Choose cash_on_delivery or card_sandbox", 422, "validation_error")
-    quantities = {}
-    for item in data["items"]:
-        if not isinstance(item, dict):
-            raise ApiError("Each basket item must be an object", 422, "validation_error")
-        try:
-            product_id = int(item["product_id"])
-            quantity = int(item["quantity"])
-        except (KeyError, TypeError, ValueError, OverflowError):
-            raise ApiError("Each item needs a product_id and whole-number quantity", 422, "validation_error")
-        if isinstance(item["product_id"], bool) or isinstance(item["quantity"], bool) or quantity < 1:
-            raise ApiError("Item quantities must be at least one", 422, "validation_error")
-        quantities[product_id] = quantities.get(product_id, 0) + quantity
-
-    products_by_id = {
-        product.id: product
-        for product in (
-            Product.query
-            .join(User, Product.farmer_id == User.id)
-            .join(FarmerProfile, FarmerProfile.user_id == User.id)
-            .filter(
-                Product.id.in_(quantities.keys()),
-                User.account_status == "active",
-                FarmerProfile.verification_status == "approved",
-            )
-            .with_for_update()
-            .all()
-        )
-    }
-    if len(products_by_id) != len(quantities):
-        raise ApiError("One or more products were not found", 404, "product_not_found")
-    if len({product.farmer_id for product in products_by_id.values()}) > 1:
-        raise ApiError(
-            "A checkout must contain products from one farm",
-            422,
-            "multiple_farms",
-        )
-    total = Decimal("0")
-    for product_id, quantity in quantities.items():
-        product = products_by_id[product_id]
-        if not product.available or product.stock < quantity:
-            raise ApiError(f"{product.name} does not have enough stock", 409, "stock_unavailable")
-        total += Decimal(product.price_azn) * quantity
-
-    order = Order(
-        customer_id=user.id,
-        status="placed",
-        total_azn=total.quantize(Decimal("0.01")),
-        delivery_address=delivery_address,
-        payment_method=payment_method,
-        payment_status="sandbox_approved" if payment_method == "card_sandbox" else "cash_due",
-    )
-    db.session.add(order)
-    db.session.flush()
-    for product_id, quantity in quantities.items():
-        product = products_by_id[product_id]
-        product.stock -= quantity
-        db.session.add(
-            OrderItem(
-                order_id=order.id,
-                product_id=product.id,
-                quantity=quantity,
-                unit_price_azn=product.price_azn,
-            )
-        )
-    db.session.add(
-        OrderAudit(
-            order_id=order.id,
-            actor_id=user.id,
-            actor_role=user.role,
-            from_status=None,
-            to_status="placed",
-        )
-    )
-    _commit()
-    return jsonify({"order": _order_dict(order), "message": "Order placed"}), 201
-
-
-@api.get("/customer/orders/<int:order_id>")
-@jwt_required()
-@role_required("customer")
-def customer_order_detail(order_id):
-    order = db.session.get(Order, order_id)
-    user = _current_user()
-    if not order or order.customer_id != user.id:
-        raise ApiError("Order not found", 404, "not_found")
-    return jsonify({"order": _order_dict(order)})
-
-
-@api.post("/customer/orders/<int:order_id>/delivered")
-@jwt_required()
-@role_required("customer")
-def mark_delivered(order_id):
-    user = _current_user()
-    order = _order_for_update(order_id)
-    if not order or order.customer_id != user.id:
-        raise ApiError("Order not found", 404, "not_found")
-    _transition(order, "delivered", user)
-    _commit()
-    return jsonify({"order": _order_dict(order), "message": "Delivery confirmed"})
-
-
-@api.post("/customer/orders/<int:order_id>/reviews")
-@jwt_required()
-@role_required("customer")
-def create_review(order_id):
-    user = _current_user()
-    order = db.session.get(Order, order_id)
-    if not order or order.customer_id != user.id:
-        raise ApiError("Order not found", 404, "not_found")
-    if order.status != "delivered":
-        raise ApiError("Reviews unlock after delivery", 409, "review_locked")
-    data = _data()
-    _required(data, "product_id", "rating")
-    try:
-        product_id = int(data["product_id"])
-        rating = int(data["rating"])
-    except (TypeError, ValueError):
-        raise ApiError("product_id and rating must be integers", 422, "validation_error")
-    if rating < 1 or rating > 5:
-        raise ApiError("rating must be between 1 and 5", 422, "validation_error")
-    if not any(item.product_id == product_id for item in order.items):
-        raise ApiError("You can only review products from this order", 403, "forbidden")
-    if Review.query.filter_by(order_id=order.id, product_id=product_id).first():
-        raise ApiError("This product has already been reviewed", 409, "review_exists")
-    review = Review(
-        order_id=order.id,
-        product_id=product_id,
-        customer_id=user.id,
-        rating=rating,
-        body=str(data.get("body", "")).strip(),
-    )
-    db.session.add(review)
-    _commit()
-    return jsonify({"review": review.to_dict()}), 201
-
-
-@api.post("/customer/orders/<int:order_id>/dispute")
-@jwt_required()
-@role_required("customer")
-def create_dispute(order_id):
-    user = _current_user()
-    order = db.session.get(Order, order_id)
-    if not order or order.customer_id != user.id:
-        raise ApiError("Order not found", 404, "not_found")
-    data = _data()
-    reason = _text(data, "reason", 255)
-    flag = DisputeFlag(order_id=order.id, raised_by_id=user.id, reason=reason)
-    db.session.add(flag)
-    _commit()
-    return jsonify({"dispute": flag.to_dict()}), 201
 
 
 PHONE_ALLOWED_CHARACTERS = set("0123456789+ ()-")
@@ -815,22 +611,11 @@ def send_product_message(product_id):
 def farmer_dashboard():
     user = _current_user()
     profile = user.farmer_profile
-    orders = _farmer_order_query(user.id).all()
-    earnings = sum(
-        item.unit_price_azn * item.quantity
-        for order in orders
-        if order.status == "delivered"
-        for item in order.items
-        if item.product.farmer_id == user.id
-    )
     return jsonify(
         {
             "user": user.to_dict(),
             "verification_status": profile.verification_status if profile else "pending_verification",
             "listing_count": Product.query.filter_by(farmer_id=user.id).count(),
-            "incoming_order_count": len(orders),
-            "pending_order_count": sum(order.status == "placed" for order in orders),
-            "earnings_azn": float(earnings or Decimal("0")),
             "listings": [product.to_dict() for product in Product.query.filter_by(farmer_id=user.id).order_by(Product.created_at.desc()).all()],
         }
     )
@@ -891,40 +676,6 @@ def delete_listing(product_id):
     return jsonify({"message": "Listing archived"})
 
 
-@api.get("/farmer/orders")
-@jwt_required()
-@role_required("farmer")
-def farmer_orders():
-    user = _current_user()
-    return jsonify({"orders": [_order_dict(order) for order in _farmer_order_query(user.id).all()]})
-
-
-@api.post("/farmer/orders/<int:order_id>/confirm")
-@jwt_required()
-@role_required("farmer")
-def farmer_confirm(order_id):
-    user = _current_user()
-    order = _order_for_update(order_id)
-    if not order or not _farmer_owns_order(order, user.id):
-        raise ApiError("Order not found", 404, "not_found")
-    _transition(order, "confirmed", user)
-    _commit()
-    return jsonify({"order": _order_dict(order), "message": "Order confirmed"})
-
-
-@api.post("/farmer/orders/<int:order_id>/harvested")
-@jwt_required()
-@role_required("farmer")
-def farmer_harvested(order_id):
-    user = _current_user()
-    order = _order_for_update(order_id)
-    if not order or not _farmer_owns_order(order, user.id):
-        raise ApiError("Order not found", 404, "not_found")
-    _transition(order, "harvested", user)
-    _commit()
-    return jsonify({"order": _order_dict(order), "message": "Harvest marked complete"})
-
-
 @api.get("/admin/dashboard")
 @jwt_required()
 @role_required("admin")
@@ -935,8 +686,7 @@ def admin_dashboard():
             "user": _current_user().to_dict(),
             "pending_farmer_count": pending,
             "user_count": User.query.count(),
-            "order_count": Order.query.count(),
-            "open_dispute_count": DisputeFlag.query.filter_by(status="open").count(),
+            "listing_count": Product.query.filter_by(available=True).count(),
             "category_count": Category.query.filter_by(active=True).count(),
             "region_count": Region.query.filter_by(active=True).count(),
         }
@@ -1109,45 +859,3 @@ def archive_region(region_id):
     region.active = False
     _commit()
     return jsonify({"message": "Region archived"})
-
-
-@api.get("/admin/orders")
-@jwt_required()
-@role_required("admin")
-def admin_orders():
-    orders = Order.query.order_by(Order.created_at.desc()).all()
-    return jsonify({"orders": [_order_dict(order) for order in orders]})
-
-
-@api.post("/admin/orders/<int:order_id>/in-transit")
-@jwt_required()
-@role_required("admin")
-def admin_in_transit(order_id):
-    user = _current_user()
-    order = _order_for_update(order_id)
-    if not order:
-        raise ApiError("Order not found", 404, "not_found")
-    _transition(order, "in_transit", user)
-    _commit()
-    return jsonify({"order": _order_dict(order), "message": "Order marked in transit"})
-
-
-@api.get("/admin/disputes")
-@jwt_required()
-@role_required("admin")
-def admin_disputes():
-    disputes = DisputeFlag.query.order_by(DisputeFlag.created_at.desc()).all()
-    return jsonify({"disputes": [flag.to_dict() for flag in disputes]})
-
-
-@api.post("/admin/disputes/<int:dispute_id>/resolve")
-@jwt_required()
-@role_required("admin")
-def resolve_dispute(dispute_id):
-    flag = db.session.get(DisputeFlag, dispute_id)
-    if not flag:
-        raise ApiError("Dispute not found", 404, "not_found")
-    flag.status = "resolved"
-    flag.resolved_at = utc_now()
-    _commit()
-    return jsonify({"dispute": flag.to_dict()})

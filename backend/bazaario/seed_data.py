@@ -1,7 +1,18 @@
 from datetime import datetime
 
 from .extensions import db
-from .models import ALLOWED_CATEGORIES, Category, FarmerProfile, Product, Region, User
+from .models import Category, FarmerProfile, Product, Region, User
+
+ALLOWED_CATEGORIES = (
+    "Fruit",
+    "Vegetables",
+    "Grains",
+    "Dairy",
+    "Honey & bee products",
+    "Herbs",
+    "Nuts",
+    "Tea",
+)
 
 
 DEMO_PASSWORDS = {

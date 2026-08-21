@@ -7,17 +7,6 @@ from .extensions import db
 
 
 ALLOWED_ROLES = ("customer", "farmer", "admin")
-ALLOWED_CATEGORIES = (
-    "Fruit",
-    "Vegetables",
-    "Grains",
-    "Dairy",
-    "Honey & bee products",
-    "Herbs",
-    "Nuts",
-    "Tea",
-)
-ORDER_STATUSES = ("placed", "confirmed", "harvested", "in_transit", "delivered")
 
 
 def utc_now():
@@ -49,9 +38,6 @@ class User(db.Model):
         "FarmerProfile", back_populates="user", uselist=False, cascade="all, delete-orphan"
     )
     products = db.relationship("Product", back_populates="farmer")
-    customer_orders = db.relationship(
-        "Order", back_populates="customer", foreign_keys="Order.customer_id"
-    )
 
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
@@ -153,8 +139,9 @@ class Product(db.Model):
     created_at = db.Column(db.DateTime, nullable=False, default=utc_now)
 
     farmer = db.relationship("User", back_populates="products")
-    order_items = db.relationship("OrderItem", back_populates="product")
-    reviews = db.relationship("Review", back_populates="product")
+    reviews = db.relationship(
+        "Review", back_populates="product", cascade="all, delete-orphan"
+    )
 
     def to_dict(self):
         profile = self.farmer.farmer_profile if self.farmer else None
@@ -184,116 +171,26 @@ class Product(db.Model):
         }
 
 
-class Order(db.Model):
-    __tablename__ = "orders"
-    __table_args__ = (
-        db.CheckConstraint(
-            "status IN ('placed', 'confirmed', 'harvested', 'in_transit', 'delivered')",
-            name="ck_orders_status",
-        ),
-        db.CheckConstraint("total_azn >= 0", name="ck_orders_non_negative_total"),
-        db.CheckConstraint(
-            "payment_method IN ('cash_on_delivery', 'card_sandbox')",
-            name="ck_orders_payment_method",
-        ),
-    )
-
-    id = db.Column(db.Integer, primary_key=True)
-    customer_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
-    status = db.Column(db.String(20), nullable=False, default="placed", index=True)
-    total_azn = db.Column(db.Numeric(10, 2), nullable=False)
-    delivery_address = db.Column(db.String(255), nullable=False)
-    payment_method = db.Column(db.String(30), nullable=False)
-    payment_status = db.Column(db.String(30), nullable=False)
-    created_at = db.Column(db.DateTime, nullable=False, default=utc_now)
-    updated_at = db.Column(db.DateTime, nullable=False, default=utc_now, onupdate=utc_now)
-
-    customer = db.relationship(
-        "User", back_populates="customer_orders", foreign_keys=[customer_id]
-    )
-    items = db.relationship(
-        "OrderItem", back_populates="order", cascade="all, delete-orphan"
-    )
-    audits = db.relationship(
-        "OrderAudit", back_populates="order", cascade="all, delete-orphan", order_by="OrderAudit.id"
-    )
-    reviews = db.relationship(
-        "Review", back_populates="order", cascade="all, delete-orphan"
-    )
-
-
-class OrderItem(db.Model):
-    __tablename__ = "order_items"
-    __table_args__ = (
-        db.CheckConstraint("quantity > 0", name="ck_order_items_positive_quantity"),
-        db.CheckConstraint("unit_price_azn >= 0", name="ck_order_items_non_negative_price"),
-    )
-
-    id = db.Column(db.Integer, primary_key=True)
-    order_id = db.Column(db.Integer, db.ForeignKey("orders.id"), nullable=False)
-    product_id = db.Column(db.Integer, db.ForeignKey("products.id"), nullable=False)
-    quantity = db.Column(db.Integer, nullable=False)
-    unit_price_azn = db.Column(db.Numeric(10, 2), nullable=False)
-
-    order = db.relationship("Order", back_populates="items")
-    product = db.relationship("Product", back_populates="order_items")
-
-
-class OrderAudit(db.Model):
-    __tablename__ = "order_audits"
-    __table_args__ = (
-        db.UniqueConstraint("order_id", "to_status", name="uq_order_audit_transition"),
-        db.CheckConstraint(
-            "to_status IN ('placed', 'confirmed', 'harvested', 'in_transit', 'delivered')",
-            name="ck_order_audits_to_status",
-        ),
-    )
-
-    id = db.Column(db.Integer, primary_key=True)
-    order_id = db.Column(db.Integer, db.ForeignKey("orders.id"), nullable=False, index=True)
-    actor_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
-    actor_role = db.Column(db.String(20), nullable=False)
-    from_status = db.Column(db.String(20), nullable=True)
-    to_status = db.Column(db.String(20), nullable=False)
-    created_at = db.Column(db.DateTime, nullable=False, default=utc_now)
-
-    order = db.relationship("Order", back_populates="audits")
-    actor = db.relationship("User")
-
-    def to_dict(self):
-        return {
-            "id": self.id,
-            "from_status": self.from_status,
-            "to_status": self.to_status,
-            "actor_id": self.actor_id,
-            "actor_role": self.actor_role,
-            "created_at": self.created_at.isoformat() if self.created_at else None,
-        }
-
-
 class Review(db.Model):
     __tablename__ = "reviews"
     __table_args__ = (
-        db.UniqueConstraint("order_id", "product_id", name="uq_review_order_product"),
+        db.UniqueConstraint("product_id", "customer_id", name="uq_review_product_customer"),
         db.CheckConstraint("rating BETWEEN 1 AND 5", name="ck_reviews_rating"),
     )
 
     id = db.Column(db.Integer, primary_key=True)
-    order_id = db.Column(db.Integer, db.ForeignKey("orders.id"), nullable=False)
-    product_id = db.Column(db.Integer, db.ForeignKey("products.id"), nullable=False)
+    product_id = db.Column(db.Integer, db.ForeignKey("products.id"), nullable=False, index=True)
     customer_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
     rating = db.Column(db.Integer, nullable=False)
     body = db.Column(db.Text, nullable=False, default="")
     created_at = db.Column(db.DateTime, nullable=False, default=utc_now)
 
-    order = db.relationship("Order", back_populates="reviews")
     product = db.relationship("Product", back_populates="reviews")
     customer = db.relationship("User")
 
     def to_dict(self):
         return {
             "id": self.id,
-            "order_id": self.order_id,
             "product_id": self.product_id,
             "customer": self.customer.display_name if self.customer else None,
             "rating": self.rating,
@@ -334,36 +231,4 @@ class Message(db.Model):
             ),
             "body": self.body,
             "created_at": self.created_at.isoformat() if self.created_at else None,
-        }
-
-
-class DisputeFlag(db.Model):
-    __tablename__ = "dispute_flags"
-    __table_args__ = (
-        db.CheckConstraint(
-            "status IN ('open', 'resolved')",
-            name="ck_dispute_flags_status",
-        ),
-    )
-
-    id = db.Column(db.Integer, primary_key=True)
-    order_id = db.Column(db.Integer, db.ForeignKey("orders.id"), nullable=False)
-    raised_by_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
-    reason = db.Column(db.String(255), nullable=False)
-    status = db.Column(db.String(20), nullable=False, default="open")
-    created_at = db.Column(db.DateTime, nullable=False, default=utc_now)
-    resolved_at = db.Column(db.DateTime, nullable=True)
-
-    order = db.relationship("Order")
-    raised_by = db.relationship("User")
-
-    def to_dict(self):
-        return {
-            "id": self.id,
-            "order_id": self.order_id,
-            "raised_by": self.raised_by.display_name if self.raised_by else None,
-            "reason": self.reason,
-            "status": self.status,
-            "created_at": self.created_at.isoformat() if self.created_at else None,
-            "resolved_at": self.resolved_at.isoformat() if self.resolved_at else None,
         }

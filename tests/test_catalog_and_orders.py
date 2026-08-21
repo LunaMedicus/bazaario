@@ -1,5 +1,4 @@
 from tests.conftest import login
-from backend.bazaario.extensions import db
 
 
 def bearer(token):
@@ -92,7 +91,7 @@ def test_customer_can_filter_catalog_by_category(client):
 
 def test_non_object_json_payload_returns_422(client, auth_tokens):
     response = client.post(
-        "/api/customer/orders",
+        "/api/products/1/reviews",
         headers=bearer(auth_tokens["customer"]),
         json=["not", "an", "object"],
     )
@@ -101,81 +100,36 @@ def test_non_object_json_payload_returns_422(client, auth_tokens):
     assert response.get_json()["code"] == "validation_error"
 
 
-def test_order_lifecycle_is_sequential_and_creates_exactly_five_audits(
-    app, client, auth_tokens
-):
-    headers = bearer(auth_tokens["customer"])
-    products = client.get("/api/products").get_json()["products"]
-    product_id = products[0]["id"]
-
-    placed = client.post(
-        "/api/customer/orders",
-        headers=headers,
-        json={
-            "items": [{"product_id": product_id, "quantity": 2}],
-            "delivery_address": "12 Nizami Street, Baku",
-            "payment_method": "cash_on_delivery",
-        },
-    )
-    assert placed.status_code == 201, placed.get_json()
-    order_id = placed.get_json()["order"]["id"]
-    assert placed.get_json()["order"]["status"] == "placed"
-    assert len(placed.get_json()["order"]["audit"] ) == 1
-
-    farmer_headers = bearer(auth_tokens["farmer"])
-    confirmed = client.post(
-        f"/api/farmer/orders/{order_id}/confirm", headers=farmer_headers
-    )
-    harvested = client.post(
-        f"/api/farmer/orders/{order_id}/harvested", headers=farmer_headers
-    )
-    transit = client.post(
-        f"/api/admin/orders/{order_id}/in-transit",
-        headers=bearer(auth_tokens["admin"]),
-    )
-    delivered = client.post(
-        f"/api/customer/orders/{order_id}/delivered", headers=headers
-    )
-
-    assert confirmed.status_code == 200
-    assert harvested.status_code == 200
-    assert transit.status_code == 200
-    assert delivered.status_code == 200
-    assert delivered.get_json()["order"]["status"] == "delivered"
-
-    with app.app_context():
-        from backend.bazaario.models import Order, OrderAudit
-
-        order = db.session.get(Order, order_id)
-        audits = OrderAudit.query.filter_by(order_id=order_id).order_by(OrderAudit.id).all()
-        assert order.status == "delivered"
-        assert len(audits) == 5
-        assert [audit.to_status for audit in audits] == [
-            "placed",
-            "confirmed",
-            "harvested",
-            "in_transit",
-            "delivered",
-        ]
-
-
-def test_order_transition_cannot_skip_a_state(client, auth_tokens):
+def test_customer_reviews_a_product_and_updates_their_review(client, auth_tokens):
     product_id = client.get("/api/products").get_json()["products"][0]["id"]
-    placed = client.post(
-        "/api/customer/orders",
-        headers=bearer(auth_tokens["customer"]),
-        json={
-            "items": [{"product_id": product_id, "quantity": 1}],
-            "delivery_address": "Test address",
-            "payment_method": "card_sandbox",
-        },
-    )
-    order_id = placed.get_json()["order"]["id"]
+    headers = bearer(auth_tokens["customer"])
 
-    skipped = client.post(
-        f"/api/admin/orders/{order_id}/in-transit",
-        headers=bearer(auth_tokens["admin"]),
+    first = client.post(
+        f"/api/products/{product_id}/reviews",
+        headers=headers,
+        json={"rating": 5, "body": "Excellent dried figs."},
+    )
+    assert first.status_code == 201, first.get_json()
+
+    updated = client.post(
+        f"/api/products/{product_id}/reviews",
+        headers=headers,
+        json={"rating": 4, "body": "Still very good."},
+    )
+    assert updated.status_code == 201
+    detail = client.get(f"/api/products/{product_id}").get_json()["product"]
+    assert len(detail["reviews"]) == 1
+    assert detail["reviews"][0]["rating"] == 4
+    assert detail["review_count"] == 1
+
+
+def test_farmer_cannot_review_products(client, auth_tokens):
+    product_id = client.get("/api/products").get_json()["products"][0]["id"]
+
+    blocked = client.post(
+        f"/api/products/{product_id}/reviews",
+        headers=bearer(auth_tokens["farmer"]),
+        json={"rating": 5},
     )
 
-    assert skipped.status_code == 409
-    assert skipped.get_json()["code"] == "invalid_transition"
+    assert blocked.status_code == 403
