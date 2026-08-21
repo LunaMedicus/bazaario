@@ -161,3 +161,85 @@ def test_archived_category_rejects_new_listings(client, auth_tokens):
 
     assert listing.status_code == 422
     assert listing.get_json()["code"] == "category_archived"
+
+
+def test_customers_and_farmers_exchange_product_messages(client, auth_tokens):
+    started = client.post(
+        "/api/products/1/messages",
+        headers=bearer(auth_tokens["customer"]),
+        json={"body": "Is this harvest available this week?"},
+    )
+    assert started.status_code == 201
+
+    thread = client.get("/api/farmer/messages", headers=bearer(auth_tokens["farmer"]))
+    assert thread.status_code == 200
+    target = thread.get_json()["threads"][0]
+    assert target["product_id"] == 1
+    assert target["message_count"] == 1
+
+    reply = client.post(
+        "/api/products/1/messages",
+        headers=bearer(auth_tokens["farmer"]),
+        json={
+            "body": "Yes — call me to arrange pickup.",
+            "customer_id": target["customer_id"],
+        },
+    )
+    assert reply.status_code == 201
+
+    transcript = client.get(
+        "/api/products/1/messages", headers=bearer(auth_tokens["customer"])
+    )
+    bodies = [message["body"] for message in transcript.get_json()["messages"]]
+    assert bodies == [
+        "Is this harvest available this week?",
+        "Yes — call me to arrange pickup.",
+    ]
+
+    other = client.post(
+        "/api/auth/register/farmer",
+        json={
+            "email": "second.farmer@test.az",
+            "password": "SecondFarmer!123",
+            "display_name": "Second Farmer",
+            "farm_name": "Second Test Farm",
+            "region": "Goychay",
+            "document_reference": "DOC-TEST-002",
+        },
+    )
+    assert other.status_code == 201
+    other_farmer = client.post(
+        "/api/auth/login",
+        json={"email": "second.farmer@test.az", "password": "SecondFarmer!123"},
+    )
+    assert other_farmer.status_code == 200
+    blocked = client.get(
+        "/api/products/1/messages",
+        headers=bearer(other_farmer.get_json()["access_token"]),
+    )
+    assert blocked.status_code == 404
+
+
+def test_farmer_phone_validation_and_clearing(client, auth_tokens):
+    updated = client.put(
+        "/api/farmer/phone",
+        headers=bearer(auth_tokens["farmer"]),
+        json={"phone": "+994 50 123 45 67"},
+    )
+    assert updated.status_code == 200
+    assert updated.get_json()["profile"]["phone"] == "+994 50 123 45 67"
+
+    cleared = client.put(
+        "/api/farmer/phone",
+        headers=bearer(auth_tokens["farmer"]),
+        json={"phone": "   "},
+    )
+    assert cleared.status_code == 200
+    assert cleared.get_json()["profile"]["phone"] is None
+
+    invalid = client.put(
+        "/api/farmer/phone",
+        headers=bearer(auth_tokens["farmer"]),
+        json={"phone": "not a phone"},
+    )
+    assert invalid.status_code == 422

@@ -25,6 +25,7 @@ from .models import (
     Order,
     OrderAudit,
     OrderItem,
+    Message,
     Product,
     Region,
     Review,
@@ -376,6 +377,7 @@ def register_farmer():
         farm_name=farm_name,
         region=region,
         document_reference=document_reference,
+        phone=_normalise_phone(data.get("phone")),
         verification_status="pending_verification",
     )
     db.session.add(profile)
@@ -654,6 +656,157 @@ def create_dispute(order_id):
     db.session.add(flag)
     _commit()
     return jsonify({"dispute": flag.to_dict()}), 201
+
+
+PHONE_ALLOWED_CHARACTERS = set("0123456789+ ()-")
+
+
+def _normalise_phone(value):
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ApiError("phone must be text", 422, "validation_error")
+    phone = value.strip()
+    if not phone:
+        return None
+    digits = sum(character.isdigit() for character in phone)
+    if len(phone) > 40 or digits < 4 or not set(phone) <= PHONE_ALLOWED_CHARACTERS:
+        raise ApiError("Enter a valid contact number", 422, "validation_error")
+    return phone
+
+
+@api.put("/farmer/phone")
+@jwt_required()
+@role_required("farmer")
+def update_farmer_phone():
+    user = _current_user()
+    profile = user.farmer_profile
+    if not profile:
+        raise ApiError("Farmer profile not found", 404, "not_found")
+    data = _data()
+    profile.phone = _normalise_phone(data.get("phone"))
+    _commit()
+    return jsonify({"profile": profile.to_dict(), "message": "Contact number updated"})
+
+
+def _thread_digests(messages, name_for_customer):
+    threads = {}
+    order = []
+    for message in sorted(messages, key=lambda item: (item.created_at, item.id)):
+        key = (message.product_id, message.customer_id)
+        thread = threads.get(key)
+        if thread is None:
+            thread = {
+                "product_id": message.product_id,
+                "product_name": message.product.name if message.product else None,
+                "customer_id": message.customer_id,
+                "customer_name": name_for_customer(message),
+                "farmer_name": message.product.farmer.display_name
+                if message.product and message.product.farmer
+                else None,
+                "message_count": 0,
+                "last_body": None,
+                "last_sender_role": None,
+                "last_created_at": None,
+            }
+            threads[key] = thread
+            order.append(key)
+        thread["message_count"] += 1
+        thread["last_body"] = message.body
+        thread["last_sender_role"] = message.sender_role
+        thread["last_created_at"] = message.created_at.isoformat() if message.created_at else None
+    return [threads[key] for key in order]
+
+
+@api.get("/farmer/messages")
+@jwt_required()
+@role_required("farmer")
+def farmer_messages():
+    user = _current_user()
+    messages = (
+        Message.query.join(Product, Message.product_id == Product.id)
+        .filter(Product.farmer_id == user.id)
+        .order_by(Message.created_at.asc(), Message.id.asc())
+        .all()
+    )
+    digests = _thread_digests(messages, lambda message: message.customer.display_name if message.customer else None)
+    return jsonify({"threads": list(reversed(digests))})
+
+
+@api.get("/customer/messages")
+@jwt_required()
+@role_required("customer")
+def customer_messages():
+    user = _current_user()
+    messages = (
+        Message.query.filter_by(customer_id=user.id)
+        .order_by(Message.created_at.asc(), Message.id.asc())
+        .all()
+    )
+    digests = _thread_digests(
+        messages,
+        lambda message: message.product.farmer.display_name
+        if message.product and message.product.farmer
+        else None,
+    )
+    return jsonify({"threads": list(reversed(digests))})
+
+
+def _load_product_for_messaging(product_id, user):
+    product = db.session.get(Product, product_id)
+    if not product:
+        raise ApiError("Product not found", 404, "not_found")
+    if user.role == "farmer":
+        if product.farmer_id != user.id:
+            raise ApiError("Product not found", 404, "not_found")
+        return product, "farmer"
+    if user.role != "customer":
+        raise ApiError("Only customers and farmers exchange messages", 403, "forbidden")
+    return product, "customer"
+
+
+@api.get("/products/<int:product_id>/messages")
+@jwt_required()
+def product_messages(product_id):
+    user = _current_user()
+    product, role = _load_product_for_messaging(product_id, user)
+    query = Message.query.filter_by(product_id=product.id)
+    if role == "customer":
+        query = query.filter_by(customer_id=user.id)
+    messages = query.order_by(Message.created_at.asc(), Message.id.asc()).all()
+    return jsonify(
+        {
+            "product": {"id": product.id, "name": product.name},
+            "viewer_role": role,
+            "messages": [message.to_dict() for message in messages],
+        }
+    )
+
+
+@api.post("/products/<int:product_id>/messages")
+@jwt_required()
+def send_product_message(product_id):
+    user = _current_user()
+    product, role = _load_product_for_messaging(product_id, user)
+    data = _data()
+    body = _text(data, "body", 2000)
+    customer_id = user.id
+    if role == "farmer":
+        target = data.get("customer_id")
+        if isinstance(target, bool) or not isinstance(target, int):
+            raise ApiError("customer_id is required to reply in a thread", 422, "validation_error")
+        customer_id = target
+        started = (
+            Message.query.filter_by(
+                product_id=product.id, customer_id=customer_id, sender_role="customer"
+            ).first()
+        )
+        if not started:
+            raise ApiError("Thread not found", 404, "not_found")
+    message = Message(product_id=product.id, customer_id=customer_id, sender_role=role, body=body)
+    db.session.add(message)
+    _commit()
+    return jsonify({"message": message.to_dict()}), 201
 
 
 @api.get("/farmer/dashboard")

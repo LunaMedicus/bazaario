@@ -273,3 +273,134 @@ input:focus, select:focus { border-color: var(--ink); }
   .quantity-control { grid-column: 3; grid-row: 1; }
   .site-footer { padding: 18px 20px; display: block; line-height: 1.8; }
 }
+
+
+/* ---- Direct seller contact: call + messages (no delivery hubs) ---- */
+.seller-contact-section {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(280px, 2fr);
+  gap: 18px;
+  margin-top: 26px;
+}
+
+.seller-contact,
+.message-panel {
+  background: var(--surface, #fff);
+  border: 1px solid rgba(20, 40, 30, 0.12);
+  border-radius: 14px;
+  padding: 18px;
+}
+
+.seller-contact h3,
+.message-panel h3 {
+  margin: 0 0 8px;
+  font-size: 1rem;
+}
+
+.seller-contact p {
+  margin: 0 0 12px;
+  color: #4b5a50;
+  font-size: 0.92rem;
+}
+
+.call-button {
+  display: inline-block;
+  padding: 10px 16px;
+  border-radius: 999px;
+  background: #1f7a4d;
+  color: #fff !important;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.call-button:hover { background: #17603b; }
+
+.message-list {
+  list-style: none;
+  margin: 10px 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.message-line {
+  border-radius: 12px;
+  padding: 8px 12px;
+  max-width: 88%;
+}
+
+.message-line p { margin: 2px 0 0; }
+
+.message-line.customer {
+  align-self: flex-start;
+  background: #f0f4ef;
+}
+
+.message-line.farmer {
+  align-self: flex-end;
+  background: #e7f3ec;
+}
+
+.message-meta {
+  font-size: 0.72rem;
+  color: #66756c;
+}
+
+.message-form {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.message-form input {
+  flex: 1;
+  padding: 9px 12px;
+  border: 1px solid rgba(20, 40, 30, 0.25);
+  border-radius: 10px;
+}
+
+.thread-list { display: flex; flex-direction: column; gap: 8px; }
+
+.thread-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 14px;
+  text-align: left;
+  padding: 12px 14px;
+  border: 1px solid rgba(20, 40, 30, 0.14);
+  border-radius: 12px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.thread-row:hover { border-color: #1f7a4d; }
+.thread-row b { display: block; }
+.thread-row span { display: block; color: #4b5a50; font-size: 0.85rem; }
+.thread-row small {
+  display: block;
+  color: #66756c;
+  font-size: 0.8rem;
+  max-width: 46ch;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.thread-row em { color: #66756c; font-style: normal; font-size: 0.78rem; }
+
+.phone-row { display: flex; gap: 8px; margin-bottom: 6px; }
+.phone-row input {
+  flex: 1;
+  max-width: 340px;
+  padding: 9px 12px;
+  border: 1px solid rgba(20, 40, 30, 0.25);
+  border-radius: 10px;
+}
+.messages-section { margin-top: 22px; }
+
+@media (max-width: 800px) {
+  .seller-contact-section { grid-template-columns: 1fr; }
+}

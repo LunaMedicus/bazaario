@@ -11,16 +11,16 @@ DEMO_PASSWORDS = {
 }
 
 FARMS = [
-    {"key": "goychay_orchard", "name": "Goychay Orchard Cooperative", "region": "Goychay", "email": "farmer@bazaario.az"},
-    {"key": "lankaran_citrus", "name": "Caspian Citrus Estate", "region": "Lankaran", "email": "citrus@bazaario.az"},
-    {"key": "qabala_highland", "name": "Qabala Highland Garden", "region": "Qabala", "email": "highland@bazaario.az"},
-    {"key": "sheki_grain", "name": "Sheki Grain Fields", "region": "Sheki", "email": "grain@bazaario.az"},
-    {"key": "astara_tea", "name": "Astara Tea Valley", "region": "Astara", "email": "tea@bazaario.az"},
-    {"key": "zagatala_nut", "name": "Zagatala Nut Grove", "region": "Zagatala", "email": "nuts@bazaario.az"},
-    {"key": "shamkir_greenhouse", "name": "Shamkir Greenhouse", "region": "Shamkir", "email": "greenhouse@bazaario.az"},
-    {"key": "goychay_pomegranate", "name": "Nar Garden Collective", "region": "Goychay", "email": "nar@bazaario.az"},
-    {"key": "lankaran_honey", "name": "Lankaran Wildflower Apiary", "region": "Lankaran", "email": "apiary@bazaario.az"},
-    {"key": "qabala_dairy", "name": "Qabala Mountain Dairy", "region": "Qabala", "email": "dairy@bazaario.az"},
+    {"key": "goychay_orchard", "name": "Goychay Orchard Cooperative", "region": "Goychay", "email": "farmer@bazaario.az", "phone": "+994 22 216 01 45"},
+    {"key": "lankaran_citrus", "name": "Caspian Citrus Estate", "region": "Lankaran", "email": "citrus@bazaario.az", "phone": "+994 25 217 02 56"},
+    {"key": "qabala_highland", "name": "Qabala Highland Garden", "region": "Qabala", "email": "highland@bazaario.az", "phone": "+994 24 218 03 67"},
+    {"key": "sheki_grain", "name": "Sheki Grain Fields", "region": "Sheki", "email": "grain@bazaario.az", "phone": "+994 24 219 04 78"},
+    {"key": "astara_tea", "name": "Astara Tea Valley", "region": "Astara", "email": "tea@bazaario.az", "phone": "+994 25 220 05 89"},
+    {"key": "zagatala_nut", "name": "Zagatala Nut Grove", "region": "Zagatala", "email": "nuts@bazaario.az", "phone": "+994 24 221 06 90"},
+    {"key": "shamkir_greenhouse", "name": "Shamkir Greenhouse", "region": "Shamkir", "email": "greenhouse@bazaario.az", "phone": "+994 22 222 07 01"},
+    {"key": "goychay_pomegranate", "name": "Nar Garden Collective", "region": "Goychay", "email": "nar@bazaario.az", "phone": "+994 22 223 08 12"},
+    {"key": "lankaran_honey", "name": "Lankaran Wildflower Apiary", "region": "Lankaran", "email": "apiary@bazaario.az", "phone": "+994 25 224 09 23"},
+    {"key": "qabala_dairy", "name": "Qabala Mountain Dairy", "region": "Qabala", "email": "dairy@bazaario.az", "phone": "+994 24 225 10 34"},
 ]
 
 # Wikimedia Commons photographs are direct, hotlinkable media URLs. scripts/check_images.py
@@ -95,6 +95,7 @@ def seed_database():
                 farm_name=farm["name"],
                 region=farm["region"],
                 document_reference=f"AZ-FARM-{user.id:04d}",
+                phone=farm.get("phone"),
                 verification_status="approved",
                 verified_at=datetime.utcnow(),
             )

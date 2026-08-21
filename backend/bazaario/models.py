@@ -87,6 +87,7 @@ class FarmerProfile(db.Model):
     farm_name = db.Column(db.String(160), nullable=False)
     region = db.Column(db.String(120), nullable=False)
     document_reference = db.Column(db.String(255), nullable=False)
+    phone = db.Column(db.String(40), nullable=True)
     verification_status = db.Column(
         db.String(30), nullable=False, default="pending_verification"
     )
@@ -100,6 +101,7 @@ class FarmerProfile(db.Model):
             "farm_name": self.farm_name,
             "region": self.region,
             "document_reference": self.document_reference,
+            "phone": self.phone,
             "verification_status": self.verification_status,
             "verified_at": self.verified_at.isoformat() if self.verified_at else None,
         }
@@ -171,6 +173,7 @@ class Product(db.Model):
                 "id": self.farmer_id,
                 "name": profile.farm_name if profile else self.farmer.display_name,
                 "region": profile.region if profile else None,
+                "phone": profile.phone if profile else None,
             },
             "rating": round(
                 sum(review.rating for review in self.reviews) / len(self.reviews), 1
@@ -294,6 +297,41 @@ class Review(db.Model):
             "product_id": self.product_id,
             "customer": self.customer.display_name if self.customer else None,
             "rating": self.rating,
+            "body": self.body,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class Message(db.Model):
+    __tablename__ = "messages"
+    __table_args__ = (
+        db.Index("ix_messages_thread", "product_id", "customer_id", "created_at"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    product_id = db.Column(db.Integer, db.ForeignKey("products.id"), nullable=False, index=True)
+    customer_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
+    sender_role = db.Column(
+        db.String(20), nullable=False
+    )  # "customer" or "farmer"; farmer identity = product.farmer_id
+    body = db.Column(db.Text, nullable=False)
+    created_at = db.Column(db.DateTime, nullable=False, default=utc_now)
+
+    product = db.relationship("Product")
+    customer = db.relationship("User")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "product_id": self.product_id,
+            "product_name": self.product.name if self.product else None,
+            "customer_id": self.customer_id,
+            "sender_role": self.sender_role,
+            "sender": (
+                self.customer.display_name
+                if self.sender_role == "customer" and self.customer
+                else (self.product.farmer.display_name if self.product and self.product.farmer else None)
+            ),
             "body": self.body,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }

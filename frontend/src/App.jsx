@@ -376,6 +376,81 @@ function ProductDetail({ id, onAdd, onNavigate }) {
           {product.reviews?.length > 0 && <div className="review-list"><h3>Customer notes</h3>{product.reviews.map((review) => <div className="review-line" key={review.id}><b>{"★".repeat(review.rating)}</b><span>{review.body || "A good harvest."}</span></div>)}</div>}
         </div>
       </section>
+      <section className="seller-contact-section">
+        <SellerContact farm={product.farm} />
+        <MessageThreadPanel productId={product.id} heading={`Messages with ${product.farm?.name || "the farm"}`} />
+      </section>
+    </div>
+  );
+}
+
+function telHref(phone) {
+  return `tel:${String(phone).replace(/[^+0-9]/g, "")}`;
+}
+
+function SellerContact({ farm }) {
+  if (!farm?.phone) {
+    return (
+      <div className="seller-contact">
+        <h3>Call the seller</h3>
+        <p className="muted">This farm has not added a contact number yet — send a message instead and they will reply here.</p>
+      </div>
+    );
+  }
+  return (
+    <div className="seller-contact">
+      <h3>Call the seller</h3>
+      <p>Bazaario has no delivery hubs yet — orders are arranged directly with the farm.</p>
+      <a className="call-button" href={telHref(farm.phone)}>📞 Call {farm.phone}</a>
+    </div>
+  );
+}
+
+function MessageThreadPanel({ productId, heading, thread, viewerRole, onBack }) {
+  const session = getSession();
+  const [messages, setMessages] = useState(null);
+  const [body, setBody] = useState("");
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState("");
+  const load = () => api.productMessages(productId).then((data) => setMessages(data.messages || [])).catch((err) => setError(err.message));
+  useEffect(() => { setMessages(null); load(); }, [productId]);
+  const send = async (event) => {
+    event.preventDefault();
+    if (!session) return;
+    const payload = thread && session.user.role === "farmer" ? { body, customer_id: thread.customer_id } : { body };
+    setSending(true); setError("");
+    try { await api.sendMessage(productId, payload); setBody(""); await load(); }
+    catch (err) { setError(err.message); }
+    finally { setSending(false); }
+  };
+  return (
+    <div className="message-panel">
+      <div className="section-title-row">
+        <h3>{heading}</h3>
+        {onBack && <button className="text-button" onClick={onBack}>← All conversations</button>}
+      </div>
+      {!session && <p className="muted">Sign in as a customer to message the seller about this harvest.</p>}
+      {session && error && <InlineError message={error} />}
+      {session && (messages === null ? (
+        <p className="muted">Loading conversation…</p>
+      ) : messages.length === 0 ? (
+        <p className="muted">No messages yet — ask about harvest dates, quantities or pickup.</p>
+      ) : (
+        <ul className="message-list">
+          {messages.map((message) => (
+            <li key={message.id} className={`message-line ${message.sender_role}`}>
+              <span className="message-meta">{message.sender_role === "customer" ? message.sender : "Farmer"} · {new Date(message.created_at).toLocaleString()}</span>
+              <p>{message.body}</p>
+            </li>
+          ))}
+        </ul>
+      ))}
+      {session && viewerRole !== "read-only" && (
+        <form className="message-form" onSubmit={send}>
+          <input value={body} onChange={(event) => setBody(event.target.value)} placeholder="Write a message…" maxLength={2000} required />
+          <button className="button button-small" disabled={sending}>{sending ? "Sending…" : "Send"}</button>
+        </form>
+      )}
     </div>
   );
 }
@@ -439,14 +514,17 @@ function DashboardRouter({ session, onNavigate, onFlash }) {
 function CustomerDashboard({ onNavigate, onFlash }) {
   const [dashboard, setDashboard] = useState(null);
   const [orders, setOrders] = useState([]);
+  const [threads, setThreads] = useState([]);
+  const [activeThread, setActiveThread] = useState(null);
   const [error, setError] = useState("");
-  const refresh = () => Promise.all([api.customerDashboard(), api.customerOrders()]).then(([dash, orderData]) => { setDashboard(dash); setOrders(orderData.orders || []); }).catch((err) => setError(err.message));
+  const refresh = () => Promise.all([api.customerDashboard(), api.customerOrders(), api.customerThreads().catch(() => ({ threads: [] }))]).then(([dash, orderData, messageData]) => { setDashboard(dash); setOrders(orderData.orders || []); setThreads(messageData.threads || []); }).catch((err) => setError(err.message));
   useEffect(() => { refresh(); }, []);
   if (error) return <div className="page"><InlineError message={error} /></div>;
   if (!dashboard) return <div className="page empty-state">Loading customer dashboard…</div>;
   return <div className="page dashboard-page"><SectionHeading eyebrow="CUSTOMER / DASHBOARD" title={`Good to see you, ${dashboard.user.display_name.split(" ")[0]}.`} detail="Your basket and every delivery in one place." />
     <div className="metric-grid"><Metric label="Orders" value={dashboard.order_count} /><Metric label="Catalog" value={dashboard.catalog_count} /><Metric label="Active delivery" value={orders.filter((order) => order.status !== "delivered").length} accent="green" /></div>
     <div className="dashboard-columns"><section className="dashboard-section"><div className="section-title-row"><h2>Order history</h2><button className="text-button" onClick={() => onNavigate("/")}>Keep shopping →</button></div>{orders.length ? orders.map((order) => <CustomerOrder key={order.id} order={order} onDelivered={async () => { await api.deliver(order.id); onFlash("Delivery confirmed"); await refresh(); }} onReview={async (body) => { await api.review(order.id, body); onFlash("Review published"); await refresh(); }} onDispute={async (reason) => { await api.dispute(order.id, { reason }); onFlash("Dispute flag sent to Bazaario ops"); }} />) : <div className="empty-state compact">No orders yet. Browse the catalog to start.</div>}</section><aside className="side-note"><p className="eyebrow">PAYMENT</p><h3>Two live checkout paths.</h3><p>Choose cash on delivery for a handoff payment, or use the card sandbox for an immediate test authorization.</p><button className="button outline" onClick={() => onNavigate("/basket")}>Open basket</button></aside></div>
+    <section className="dashboard-section messages-section"><div className="section-title-row"><h2>Messages with sellers</h2><span className="muted">{threads.length ? `${threads.length} conversation${threads.length > 1 ? "s" : ""}` : "Direct with each farm"}</span></div>{threads.length === 0 && !activeThread ? <p className="muted">No conversations yet — open any product and use “Write a message” to contact a farm directly (no delivery hubs, everything is arranged with the seller).</p> : activeThread ? <MessageThreadPanel productId={activeThread.product_id} heading={`${activeThread.product_name || "Product"} · ${activeThread.farmer_name || "farm"}`} thread={activeThread} onBack={() => setActiveThread(null)} /> : <div className="thread-list">{threads.map((thread) => <button className="thread-row" key={`${thread.product_id}-${thread.customer_id}`} onClick={() => setActiveThread(thread)}><div><b>{thread.product_name}</b><span>{thread.farmer_name} · {thread.message_count} message{thread.message_count > 1 ? "s" : ""}</span><small>{thread.last_body}</small></div><em>{new Date(thread.last_created_at).toLocaleDateString()}</em></button>)}</div>}</section>
   </div>;
 }
 
@@ -471,14 +549,19 @@ function FarmerDashboard({ onFlash }) {
   const [dashboard, setDashboard] = useState(null);
   const [orders, setOrders] = useState([]);
   const [meta, setMeta] = useState({ categories: CATEGORIES, seasons: SEASONS });
+  const [threads, setThreads] = useState([]);
+  const [activeThread, setActiveThread] = useState(null);
+  const [phoneDraft, setPhoneDraft] = useState("");
   const blankForm = { name: "", category: "Fruit", price_azn: "", stock: "", season: "", image_url: "", description: "" };
   const [form, setForm] = useState(blankForm);
   const [editingId, setEditingId] = useState(null);
   const [error, setError] = useState("");
-  const refresh = () => Promise.all([api.farmerDashboard(), api.farmerOrders(), api.meta()]).then(([dash, orderData, metadata]) => {
+  const refresh = () => Promise.all([api.farmerDashboard(), api.farmerOrders(), api.meta(), api.farmerThreads().catch(() => ({ threads: [] }))]).then(([dash, orderData, metadata, messageData]) => {
     setDashboard(dash);
     setOrders(orderData.orders || []);
     setMeta(metadata);
+    setPhoneDraft(dash.user.farmer_profile?.phone || "");
+    setThreads(messageData.threads || []);
     if (metadata.categories?.length && !metadata.categories.includes(form.category)) {
       setForm((current) => ({ ...current, category: metadata.categories[0] }));
     }
@@ -513,13 +596,20 @@ function FarmerDashboard({ onFlash }) {
     });
   };
   const transition = async (action, id) => { try { await action(id); onFlash("Order status updated"); await refresh(); } catch (err) { setError(err.message); } };
+  const savePhone = async () => {
+    setError("");
+    try { await api.updatePhone({ phone: phoneDraft }); onFlash("Contact number updated"); await refresh(); }
+    catch (err) { setError(err.message); }
+  };
   if (error && !dashboard) return <div className="page"><InlineError message={error} /></div>;
   if (!dashboard) return <div className="page empty-state">Loading farmer dashboard…</div>;
   const pending = dashboard.verification_status !== "approved";
   return <div className="page dashboard-page"><SectionHeading eyebrow="FARMER / DASHBOARD" title={dashboard.user.farmer_profile?.farm_name || dashboard.user.display_name} detail={dashboard.user.farmer_profile?.region || "Azerbaijan"} />
     {pending && <div className="verification-banner"><div><span className="status-pip orange-pip" /><strong>Verification {dashboard.verification_status.replaceAll("_", " ")}</strong></div><span>Your farm profile is being reviewed. Listing publication unlocks after approval.</span></div>}
+    <section className="dashboard-section contact-section"><div className="section-title-row"><h2>Contact number</h2><span className="muted">Shown on your listings for direct calls</span></div><div className="phone-row"><input value={phoneDraft} onChange={(event) => setPhoneDraft(event.target.value)} placeholder="+994 22 216 01 45" /><button className="button button-small" onClick={savePhone}>Save number</button></div><small className="muted">There are no delivery hubs yet — buyers arrange handover by calling or messaging you.</small></section>
     <div className="metric-grid"><Metric label="Listings" value={dashboard.listing_count} /><Metric label="Incoming orders" value={dashboard.incoming_order_count} /><Metric label="Delivered earnings" value={money(dashboard.earnings_azn)} accent="green" /></div>
     <div className="dashboard-columns farmer-columns"><section className="dashboard-section"><div className="section-title-row"><h2>Your listings</h2><span className="muted">{pending ? "Publishing locked" : "Manage your catalog"}</span></div>{error && <InlineError message={error} />}{!pending && <form className="listing-form" onSubmit={saveListing}><Field label="Product name" value={form.name} onChange={(value) => setForm({ ...form, name: value })} placeholder="e.g. Orchard apples" /><label><span>Category</span><select value={form.category} onChange={(event) => setForm({ ...form, category: event.target.value })}>{(meta.categories || CATEGORIES).map((category) => <option key={category}>{category}</option>)}</select></label><div className="form-row"><Field label="Price / AZN" type="number" min="0" step="0.01" value={form.price_azn} onChange={(value) => setForm({ ...form, price_azn: value })} placeholder="4.50" /><Field label="Stock" type="number" min="0" step="1" value={form.stock} onChange={(value) => setForm({ ...form, stock: value })} placeholder="20" /></div><Field label="Season window" value={form.season} onChange={(value) => setForm({ ...form, season: value })} placeholder="August–October" /><Field label="Real image URL" type="url" value={form.image_url} onChange={(value) => setForm({ ...form, image_url: value })} placeholder="https://..." /><Field label="Description" value={form.description} onChange={(value) => setForm({ ...form, description: value })} placeholder="How this harvest is grown" /><button className="button">{editingId ? "Save listing" : "Publish listing"}</button>{editingId && <button type="button" className="text-button" onClick={() => { setEditingId(null); setForm(blankForm); }}>Cancel edit</button>}</form>}{dashboard.listings.length ? <div className="listing-list">{dashboard.listings.map((listing) => <div className="listing-row" key={listing.id}><img src={listing.image_url} alt="" /><div><b>{listing.name}</b><span>{listing.category} · {listing.stock} in stock</span></div><strong>{money(listing.price_azn)}</strong><button className="text-button" onClick={() => editListing(listing)}>Edit</button><button className="text-button danger-text" onClick={async () => { try { await api.farmerListingDelete(listing.id); onFlash("Listing archived"); await refresh(); } catch (err) { setError(err.message); } }}>Archive</button></div>)}</div> : <div className="empty-state compact">No listings yet.</div>}</section><section className="dashboard-section"><div className="section-title-row"><h2>Incoming orders</h2><span className="muted">Owned transitions only</span></div>{orders.length ? orders.map((order) => <article className="compact-order" key={order.id}><div><b>Order #{String(order.id).padStart(4, "0")}</b><span>{order.customer?.name} · {money(order.total_azn)}</span></div><div className="compact-order-actions"><span className={`status-chip ${order.status}`}>{STATUS_LABELS[order.status]}</span>{order.status === "placed" && <button className="button button-small" onClick={() => transition(api.farmerConfirm, order.id)}>Accept</button>}{order.status === "confirmed" && <button className="button button-small" onClick={() => transition(api.farmerHarvest, order.id)}>Harvested</button>}</div></article>) : <div className="empty-state compact">Incoming orders will appear here.</div>}</section></div>
+    <section className="dashboard-section messages-section"><div className="section-title-row"><h2>Buyer messages</h2><span className="muted">{threads.length ? `${threads.length} conversation${threads.length > 1 ? "s" : ""}` : "Reply from your listings"}</span></div>{threads.length === 0 && !activeThread ? <p className="muted">No buyer questions yet. Buyers reach out from your product pages.</p> : activeThread ? <MessageThreadPanel productId={activeThread.product_id} heading={`${activeThread.product_name || "Product"} · ${activeThread.customer_name || "buyer"}`} thread={activeThread} onBack={() => setActiveThread(null)} /> : <div className="thread-list">{threads.map((thread) => <button className="thread-row" key={`${thread.product_id}-${thread.customer_id}`} onClick={() => setActiveThread(thread)}><div><b>{thread.product_name}</b><span>{thread.customer_name} · {thread.message_count} message{thread.message_count > 1 ? "s" : ""}</span><small>{thread.last_body}</small></div><em>{new Date(thread.last_created_at).toLocaleDateString()}</em></button>)}</div>}</section>
   </div>;
 }
 

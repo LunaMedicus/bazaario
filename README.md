@@ -99,6 +99,13 @@ A transition with a skip, repeat, or backwards move returns `409` with `code: "i
 
 Checkout supports cash-on-delivery and a deterministic `card_sandbox` authorization stub. Stock is checked and reserved when the order is placed. Reviews are rejected until the customer marks the order delivered and can only reference products from that order.
 
+## Direct seller contact: messages and calls
+
+Bazaario has no logistics or delivery hubs. Fulfilment is arranged directly between the customer and the farm, so every product page carries two contact paths:
+
+- **Message the seller** — a per-product thread between one customer and the farm. Customers start it from the product page (`POST /api/products/:id/messages`); farmers reply into the same thread with `customer_id` (threads must be customer-initiated). Each side sees its inbox on the dashboard (`GET /api/customer/messages`, `GET /api/farmer/messages`) and the full transcript under `GET /api/products/:id/messages`. Access control: customers read only their own threads, farmers only their own products, admins are refused, and empty bodies return 422.
+- **Call the seller** — each farmer profile has an optional `phone` number, editable from the farmer dashboard (`PUT /api/farmer/phone`, validated: digits, `+`, spaces, parentheses, hyphens; blank clears it) and optional at farmer signup. It is exposed on every product payload as `farm.phone` and rendered as a `tel:` call button. Seeded demo farms all carry plausible +994 numbers.
+
 ## Agricultural catalog and image gate
 
 Product categories are enforced by the API against the fixed agricultural allow-list. A non-agricultural category (for example, `Electronics`) returns `422` with `code: "invalid_category"`. Admin category management can activate/deactivate only the same eight allowed categories; arbitrary categories cannot be created. Farmer listing images are constrained to hotlinkable Unsplash, Pexels, or Wikimedia Commons hosts, while the seed gate additionally verifies the live response content type.
