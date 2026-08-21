@@ -105,6 +105,10 @@ def _current_user():
     user = db.session.get(User, int(get_jwt_identity()))
     if not user:
         raise ApiError("User no longer exists", 401, "unauthorized")
+    if user.account_status == "suspended":
+        raise ApiError("Account is suspended", 403, "account_suspended")
+    if user.account_status != "active":
+        raise ApiError("Account is not active", 403, "account_inactive")
     return user
 
 
@@ -199,6 +203,13 @@ def _product_payload(data):
             "Only agricultural categories are allowed",
             422,
             "invalid_category",
+        )
+    category_row = Category.query.filter_by(name=category).first()
+    if category_row and not category_row.active:
+        raise ApiError(
+            "This category is archived and no longer accepts new listings",
+            422,
+            "category_archived",
         )
     try:
         price = Decimal(str(data["price_azn"]))

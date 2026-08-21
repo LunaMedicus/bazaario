@@ -33,6 +33,7 @@ export async function apiFetch(path, options = {}) {
 
 export const api = {
   login: (body) => apiFetch("/auth/login", { method: "POST", body: JSON.stringify(body) }),
+  me: () => apiFetch("/auth/me"),
   registerCustomer: (body) => apiFetch("/auth/register/customer", { method: "POST", body: JSON.stringify(body) }),
   registerFarmer: (body) => apiFetch("/auth/register/farmer", { method: "POST", body: JSON.stringify(body) }),
   meta: () => apiFetch("/meta"),
@@ -55,6 +56,7 @@ export const api = {
   adminFarmers: (status = "") => apiFetch(`/admin/farmers${status ? `?status=${encodeURIComponent(status)}` : ""}`),
   approveFarmer: (id) => apiFetch(`/admin/farmers/${id}/approve`, { method: "POST" }),
   suspendFarmer: (id) => apiFetch(`/admin/farmers/${id}/suspend`, { method: "POST" }),
+  restoreFarmer: (id) => apiFetch(`/admin/farmers/${id}/restore`, { method: "POST" }),
   adminOrders: () => apiFetch("/admin/orders"),
   transit: (id) => apiFetch(`/admin/orders/${id}/in-transit`, { method: "POST" }),
   adminDisputes: () => apiFetch("/admin/disputes"),

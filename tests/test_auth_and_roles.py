@@ -60,6 +60,10 @@ def test_suspended_account_is_rejected_even_with_an_existing_token(client, auth_
     assert dashboard.status_code == 403
     assert dashboard.get_json()["code"] == "account_suspended"
 
+    me = client.get("/api/auth/me", headers=bearer(auth_tokens["customer"]))
+    assert me.status_code == 403
+    assert me.get_json()["code"] == "account_suspended"
+
 
 def test_role_claim_must_match_current_user_role(app, client, auth_tokens):
     with app.app_context():
@@ -129,3 +133,31 @@ def test_farmer_registration_starts_pending_and_cannot_publish(client):
 
     assert listing.status_code == 403
     assert listing.get_json()["code"] == "farmer_verification_required"
+
+
+def test_archived_category_rejects_new_listings(client, auth_tokens):
+    categories = client.get(
+        "/api/admin/categories", headers=bearer(auth_tokens["admin"])
+    ).get_json()["categories"]
+    fruit = next(category for category in categories if category["name"] == "Fruit")
+
+    archived = client.delete(
+        f"/api/admin/categories/{fruit['id']}", headers=bearer(auth_tokens["admin"])
+    )
+    assert archived.status_code == 200
+
+    listing = client.post(
+        "/api/farmer/listings",
+        headers=bearer(auth_tokens["farmer"]),
+        json={
+            "name": "Archived Category Apples",
+            "category": "Fruit",
+            "price_azn": 4.5,
+            "stock": 10,
+            "season": "August–October",
+            "image_url": "https://images.unsplash.com/photo-1592924357228-91a4daadcfea?w=1200&q=80",
+        },
+    )
+
+    assert listing.status_code == 422
+    assert listing.get_json()["code"] == "category_archived"
