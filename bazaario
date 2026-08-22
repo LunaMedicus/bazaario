@@ -18,19 +18,22 @@ WEB_PORT="${BAZAARIO_WEB_PORT:-5173}"
 PY=".venv/bin/python"
 
 need_venv() {
-  [ -x "$PY" ] || { echo "No virtualenv yet. Run: ./bazaario setup"; exit 1; }
+  if [ ! -x "$PY" ] || ! "$PY" -c "import flask, markupsafe" >/dev/null 2>&1; then
+    echo "Virtualenv missing or incomplete. Running setup first..."
+    "$0" setup
+  fi
 }
 
 case "${1:-help}" in
   setup)
     python3 -m venv .venv
     .venv/bin/pip install -q -r requirements.txt
-    (cd frontend && npm install)
+    (cd frontend && [ -d node_modules ] || npm install)
     echo "Setup complete. Next: ./bazaario seed && ./bazaario dev"
     ;;
   seed)
     need_venv
-    "$PY" seed.py
+    exec "$PY" seed.py
     ;;
   api)
     need_venv
@@ -39,20 +42,17 @@ case "${1:-help}" in
   web)
     [ -d frontend/node_modules ] || { echo "Frontend deps missing. Run: ./bazaario setup"; exit 1; }
     cd frontend
-    exec env VITE_API_URL="http://127.0.0.1:${API_PORT}/api" \
-      npm run dev -- --host 127.0.0.1 --port "$WEB_PORT"
+    # The Vite proxy forwards /api to the backend; no cross-origin URL needed.
+    exec npm run dev -- --host 127.0.0.1 --port "$WEB_PORT"
     ;;
   dev)
     need_venv
     [ -d frontend/node_modules ] || { echo "Frontend deps missing. Run: ./bazaario setup"; exit 1; }
     trap 'kill 0' EXIT INT TERM
     "$PY" -m flask --app backend.bazaario run --host 127.0.0.1 --port "$API_PORT" &
-    API_PID=$!
-    (cd frontend && exec env VITE_API_URL="http://127.0.0.1:${API_PORT}/api" \
-      npm run dev -- --host 127.0.0.1 --port "$WEB_PORT") &
-    WEB_PID=$!
+    (cd frontend && exec npm run dev -- --host 127.0.0.1 --port "$WEB_PORT") &
     echo "api  -> http://127.0.0.1:${API_PORT}/api"
-    echo "web  -> http://127.0.0.1:${WEB_PORT}"
+    echo "web  -> http://127.0.0.1:${WEB_PORT} (proxies /api to the api port)"
     echo "Ctrl-C stops both."
     wait
     ;;
