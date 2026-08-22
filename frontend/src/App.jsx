@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { api, clearSession, getSession, saveSession } from "./api";
 import { LANGS, LangProvider, getInitialLang, storeLang, useT, useLang, useSetLang, translate } from "./i18n";
 import { translateMany } from "./mt";
+import { cdnImage } from "./images";
 
 const CATEGORIES = [
   "Fruit",
@@ -308,7 +309,7 @@ function ProductCard({ product, onOpen }) {
   return (
     <article className="product-card">
       <button className="product-image-button" onClick={onOpen} aria-label={`View ${shownName}`}>
-        <img src={product.image_url} alt={shownName} loading="lazy" />
+        <img src={cdnImage(product.image_url, "card")} alt={shownName} loading="lazy" decoding="async" width="480" height="320" />
         <span className="image-label">{t(`cat.${product.category}`, {}, product.category)}</span>
       </button>
       <div className="product-card-body">
@@ -396,7 +397,7 @@ function ProductDetail({ id, onNavigate, onFlash }) {
     <div className="page product-detail-page">
       <button className="back-link" onClick={() => onNavigate("/")}>{t("product.back")}</button>
       <section className="product-detail">
-        <div className="detail-image-wrap"><img src={product.image_url} alt={shownName} /></div>
+        <div className="detail-image-wrap"><img src={cdnImage(product.image_url, "detail")} alt={shownName} decoding="async" fetchpriority="high" width="960" height="640" /></div>
         <div className="detail-copy">
           <p className="eyebrow orange">{t(`cat.${product.category}`, {}, product.category)} / {t(`region.${product.region}`, {}, product.region)}</p>
           <h1>{shownName}</h1>
