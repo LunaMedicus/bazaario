@@ -314,7 +314,7 @@ function ProductCard({ product, onOpen }) {
       <div className="product-card-body">
         <div className="product-card-topline">
           <span>{t(`region.${product.region}`, {}, product.region)}</span>
-          <span>{localiseSeasonWindow(product.season, lang)}</span>
+          <span>{t(`season.${product.season}`, {}, null) || localiseSeasonWindow(product.season, lang)}</span>
         </div>
         <button className="product-name" onClick={onOpen}>{shownName}</button>
         <div className="product-shop">{product.shop?.name}</div>
@@ -380,7 +380,8 @@ function ProductDetail({ id, onNavigate, onFlash }) {
   if (!product) return <div className="page empty-state">{t("product.loading")}</div>;
   const translated = content.lang === lang && Boolean(content.map[product.name]);
   const shownName = translated ? content.map[product.name] : product.name;
-  const shownSeason = localiseSeasonWindow(product.season, lang);
+  const dictSeason = t(`season.${product.season}`, {}, null);
+  const shownSeason = dictSeason || localiseSeasonWindow(product.season, lang);
   const shownDescription = translated
     ? content.map[product.description] || product.description
     : product.description;
@@ -397,12 +398,12 @@ function ProductDetail({ id, onNavigate, onFlash }) {
             <TranslateToggle
               translated={translated}
               working={content.working}
-              onTranslate={() => translateContent({
-                names: [product.name],
-                descriptions: [product.description],
-                reviews: (product.reviews || []).map((review) => review.body).filter(Boolean),
-              })}
-              onShowOriginal={() => translateContent({ names: [], descriptions: [], reviews: [] })}
+              onTranslate={() => translateContent([
+                product.name,
+                product.description,
+                ...(product.reviews || []).map((review) => review.body),
+              ])}
+              onShowOriginal={() => translateContent([])}
             />
           </div>
           <div className="detail-shop"><span>{t("product.soldBy")}</span><strong>{product.shop?.name}</strong><small>{t(`region.${product.shop?.region}`, {}, product.shop?.region)}, Azerbaijan</small></div>
