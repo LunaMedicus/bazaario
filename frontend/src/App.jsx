@@ -195,7 +195,7 @@ function CatalogView({ onNavigate }) {
     <div className="page page-catalog">
       <section className="catalog-intro">
         <h1>Catalog</h1>
-        <p className="intro-copy">Contact the farm directly to buy. There are no delivery hubs; buyers and farmers agree on pickup and payment between themselves.</p>
+        <p className="intro-copy">Contact the shop directly to buy. There are no delivery hubs; buyers and shops agree on pickup and payment between themselves.</p>
       </section>
 
       <section className="filter-bar" aria-label="Catalog filters">
@@ -263,7 +263,7 @@ function ProductCard({ product, onOpen }) {
           <span>{product.season}</span>
         </div>
         <button className="product-name" onClick={onOpen}>{product.name}</button>
-        <div className="product-farm">{product.farm?.name}</div>
+        <div className="product-shop">{product.shop?.name}</div>
         <div className="product-card-bottom">
           <strong>{money(product.price_azn)}</strong>
           <button className="add-button" onClick={onOpen}>View</button>
@@ -289,15 +289,15 @@ function ProductDetail({ id, onNavigate, onFlash }) {
           <p className="eyebrow orange">{product.category} / {product.region}</p>
           <h1>{product.name}</h1>
           <p className="detail-description">{product.description}</p>
-          <div className="detail-farm"><span>Source farm</span><strong>{product.farm?.name}</strong><small>{product.farm?.region}, Azerbaijan</small></div>
+          <div className="detail-shop"><span>Sold by</span><strong>{product.shop?.name}</strong><small>{product.shop?.region}, Azerbaijan</small></div>
           <div className="detail-season"><span>Season</span><strong>{product.season}</strong><span className="stock-note">{product.stock} in stock</span></div>
-          <div className="detail-purchase"><strong>{money(product.price_azn)}</strong><span className="muted">Contact the farm to buy.</span></div>
+          <div className="detail-purchase"><strong>{money(product.price_azn)}</strong><span className="muted">Contact the shop to buy.</span></div>
           <ReviewSection productId={product.id} reviews={product.reviews} onDone={() => { load().then(onFlash ? undefined : undefined); }} />
         </div>
       </section>
       <section className="seller-contact-section">
-        <SellerContact farm={product.farm} />
-        <MessageThreadPanel productId={product.id} heading={`Messages with ${product.farm?.name || "the farm"}`} />
+        <SellerContact shop={product.shop} />
+        <MessageThreadPanel productId={product.id} heading={`Messages with ${product.shop?.name || "the shop"}`} />
       </section>
     </div>
   );
@@ -352,20 +352,20 @@ function telHref(phone) {
   return `tel:${String(phone).replace(/[^+0-9]/g, "")}`;
 }
 
-function SellerContact({ farm }) {
-  if (!farm?.phone) {
+function SellerContact({ shop }) {
+  if (!shop?.phone) {
     return (
       <div className="seller-contact">
         <h3>Call the seller</h3>
-        <p className="muted">This farm has not added a contact number yet. Send a message instead and they will reply here.</p>
+        <p className="muted">This shop has not added a contact number yet. Send a message instead and they will reply here.</p>
       </div>
     );
   }
   return (
     <div className="seller-contact">
       <h3>Call the seller</h3>
-      <p>Bazaario has no delivery hubs yet, so orders are arranged directly with the farm.</p>
-      <a className="call-button" href={telHref(farm.phone)}>📞 Call {farm.phone}</a>
+      <p>Bazaario has no delivery hubs yet, so orders are arranged directly with the shop.</p>
+      <a className="call-button" href={telHref(shop.phone)}>📞 Call {shop.phone}</a>
     </div>
   );
 }
@@ -381,7 +381,7 @@ function MessageThreadPanel({ productId, heading, thread, viewerRole, onBack }) 
   const send = async (event) => {
     event.preventDefault();
     if (!session) return;
-    const payload = thread && session.user.role === "farmer" ? { body, customer_id: thread.customer_id } : { body };
+    const payload = thread && session.user.role === "shop" ? { body, customer_id: thread.customer_id } : { body };
     setSending(true); setError("");
     try { await api.sendMessage(productId, payload); setBody(""); await load(); }
     catch (err) { setError(err.message); }
@@ -393,17 +393,17 @@ function MessageThreadPanel({ productId, heading, thread, viewerRole, onBack }) 
         <h3>{heading}</h3>
         {onBack && <button className="text-button" onClick={onBack}>← All conversations</button>}
       </div>
-      {!session && <p className="muted">Sign in as a customer to message the seller about this harvest.</p>}
+      {!session && <p className="muted">Sign in as a customer to message the seller about this listing.</p>}
       {session && error && <InlineError message={error} />}
       {session && (messages === null ? (
         <p className="muted">Loading conversation…</p>
       ) : messages.length === 0 ? (
-        <p className="muted">No messages yet. Ask about harvest dates, quantities or pickup.</p>
+        <p className="muted">No messages yet. Ask about availability, quantities or pickup.</p>
       ) : (
         <ul className="message-list">
           {messages.map((message) => (
             <li key={message.id} className={`message-line ${message.sender_role}`}>
-              <span className="message-meta">{message.sender_role === "customer" ? message.sender : "Farmer"} · {new Date(message.created_at).toLocaleString()}</span>
+              <span className="message-meta">{message.sender_role === "customer" ? message.sender : "Shop"} · {new Date(message.created_at).toLocaleString()}</span>
               <p>{message.body}</p>
             </li>
           ))}
@@ -445,7 +445,7 @@ function LoginView({ onLogin, onNavigate }) {
 
 function RegisterView({ onNavigate, onFlash }) {
   const [role, setRole] = useState("customer");
-  const [form, setForm] = useState({ display_name: "", email: "", password: "", farm_name: "", region: "", document_reference: "" });
+  const [form, setForm] = useState({ display_name: "", email: "", password: "", shop_name: "", region: "", phone: "" });
   const [error, setError] = useState("");
   const [done, setDone] = useState(false);
   const update = (key, value) => setForm({ ...form, [key]: value });
@@ -453,15 +453,15 @@ function RegisterView({ onNavigate, onFlash }) {
     event.preventDefault(); setError("");
     try {
       if (role === "customer") await api.registerCustomer({ display_name: form.display_name, email: form.email, password: form.password });
-      else await api.registerFarmer(form);
+      else await api.registerShop({ display_name: form.display_name, email: form.email, password: form.password, shop_name: form.shop_name, region: form.region, phone: form.phone || undefined });
       setDone(true); onFlash("Application received");
     } catch (err) { setError(err.message); }
   };
-  if (done) return <div className="page auth-page"><div className="auth-panel success-panel"><p className="eyebrow green">APPLICATION RECEIVED</p><h1>{role === "farmer" ? "Under review." : "Account ready."}</h1><p>{role === "farmer" ? "An admin will review your farm profile. Publishing unlocks after approval." : "Your customer account is ready to use."}</p><button className="button full" onClick={() => onNavigate("/login")}>Continue to sign in</button></div></div>;
+  if (done) return <div className="page auth-page"><div className="auth-panel success-panel"><p className="eyebrow green">APPLICATION RECEIVED</p><h1>{role === "shop" ? "Under review." : "Account ready."}</h1><p>{role === "shop" ? "An admin will review your shop profile. Publishing unlocks after approval." : "Your customer account is ready to use."}</p><button className="button full" onClick={() => onNavigate("/login")}>Continue to sign in</button></div></div>;
   return (
-    <div className="page auth-page"><div className="auth-panel wide"><p className="eyebrow orange">CREATE ACCOUNT</p><h1>Choose your path.</h1><div className="role-choice"><button className={role === "customer" ? "active" : ""} onClick={() => setRole("customer")}><b>Customer</b><span>Contact farms and leave reviews.</span></button><button className={role === "farmer" ? "active" : ""} onClick={() => setRole("farmer")}><b>Farmer</b><span>Sell after farm verification.</span></button></div>
+    <div className="page auth-page"><div className="auth-panel wide"><p className="eyebrow orange">CREATE ACCOUNT</p><h1>Choose your path.</h1><div className="role-choice"><button className={role === "customer" ? "active" : ""} onClick={() => setRole("customer")}><b>Customer</b><span>Contact shops and leave reviews.</span></button><button className={role === "shop" ? "active" : ""} onClick={() => setRole("shop")}><b>Shop</b><span>Sell after verification.</span></button></div>
       <form onSubmit={submit} className="stack-form"><Field label="Full name" value={form.display_name} onChange={(value) => update("display_name", value)} placeholder="Your name" /><Field label="Email" type="email" value={form.email} onChange={(value) => update("email", value)} placeholder="you@example.com" /><Field label="Password" type="password" value={form.password} onChange={(value) => update("password", value)} placeholder="At least 8 characters" />
-        {role === "farmer" && <div className="farmer-fields"><Field label="Farm name" value={form.farm_name} onChange={(value) => update("farm_name", value)} placeholder="Your farm or cooperative" /><Field label="Region" value={form.region} onChange={(value) => update("region", value)} placeholder="e.g. Lankaran" /><Field label="Document reference" value={form.document_reference} onChange={(value) => update("document_reference", value)} placeholder="Agricultural registration reference" /></div>}
+        {role === "shop" && <div className="shop-fields"><Field label="Shop name" value={form.shop_name} onChange={(value) => update("shop_name", value)} placeholder="Your shop or stall" /><Field label="Region" value={form.region} onChange={(value) => update("region", value)} placeholder="e.g. Lankaran" /></div>}
         {error && <InlineError message={error} />}<button className="button full">Submit {role} registration</button>
       </form><p className="auth-switch">Already registered? <button onClick={() => onNavigate("/login")}>Sign in</button></p>
     </div></div>
@@ -470,7 +470,7 @@ function RegisterView({ onNavigate, onFlash }) {
 
 function DashboardRouter({ session, onNavigate, onFlash }) {
   if (session.user.role === "customer") return <CustomerDashboard onNavigate={onNavigate} onFlash={onFlash} />;
-  if (session.user.role === "farmer") return <FarmerDashboard onFlash={onFlash} />;
+  if (session.user.role === "shop") return <ShopDashboard onFlash={onFlash} />;
   if (session.user.role === "admin") return <AdminDashboard onFlash={onFlash} />;
   return <div className="page empty-state"><InlineError message="This session has an unknown role. Please sign in again." /><button className="button" onClick={() => { clearSession(); window.location.reload(); }}>Return to sign in</button></div>;
 }
@@ -484,14 +484,14 @@ function CustomerDashboard({ onNavigate }) {
   useEffect(() => { refresh(); }, []);
   if (error) return <div className="page"><InlineError message={error} /></div>;
   if (!dashboard) return <div className="page empty-state">Loading dashboard…</div>;
-  return <div className="page dashboard-page"><SectionHeading eyebrow="CUSTOMER / DASHBOARD" title={`Good to see you, ${dashboard.user.display_name.split(" ")[0]}.`} detail="Buy by contacting farms directly." />
+  return <div className="page dashboard-page"><SectionHeading eyebrow="CUSTOMER / DASHBOARD" title={`Good to see you, ${dashboard.user.display_name.split(" ")[0]}.`} detail="Buy by contacting shops directly." />
     <div className="metric-grid"><Metric label="Conversations" value={dashboard.message_thread_count} accent="green" /><Metric label="Catalog" value={dashboard.catalog_count} /></div>
-    <div className="dashboard-columns"><aside className="side-note"><p className="eyebrow">HOW BUYING WORKS</p><h3>Agreement based.</h3><p>Pick a listing, call or message the farm, and settle price, quantity and handover with them. Reviews are per product.</p><button className="button outline" onClick={() => onNavigate("/")}>Open catalog</button></aside></div>
-    <section className="dashboard-section messages-section"><div className="section-title-row"><h2>Messages with sellers</h2><span className="muted">{threads.length ? `${threads.length} conversation${threads.length > 1 ? "s" : ""}` : "Direct with each farm"}</span></div>{threads.length === 0 && !activeThread ? <p className="muted">No conversations yet. Open any product and use "Write a message" to reach a farm directly. There are no delivery hubs, everything is arranged with the seller.</p> : activeThread ? <MessageThreadPanel productId={activeThread.product_id} heading={`${activeThread.product_name || "Product"} · ${activeThread.farmer_name || "farm"}`} thread={activeThread} onBack={() => setActiveThread(null)} /> : <div className="thread-list">{threads.map((thread) => <button className="thread-row" key={`${thread.product_id}-${thread.customer_id}`} onClick={() => setActiveThread(thread)}><div><b>{thread.product_name}</b><span>{thread.farmer_name} · {thread.message_count} message{thread.message_count > 1 ? "s" : ""}</span><small>{thread.last_body}</small></div><em>{new Date(thread.last_created_at).toLocaleDateString()}</em></button>)}</div>}</section>
+    <div className="dashboard-columns"><aside className="side-note"><p className="eyebrow">HOW BUYING WORKS</p><h3>Agreement based.</h3><p>Pick a listing, call or message the shop, and settle price, quantity and handover with them. Reviews are per product.</p><button className="button outline" onClick={() => onNavigate("/")}>Open catalog</button></aside></div>
+    <section className="dashboard-section messages-section"><div className="section-title-row"><h2>Messages with sellers</h2><span className="muted">{threads.length ? `${threads.length} conversation${threads.length > 1 ? "s" : ""}` : "Direct with each shop"}</span></div>{threads.length === 0 && !activeThread ? <p className="muted">No conversations yet. Open any product and use "Write a message" to reach a shop directly. There are no delivery hubs, everything is arranged with the seller.</p> : activeThread ? <MessageThreadPanel productId={activeThread.product_id} heading={`${activeThread.product_name || "Product"} · ${activeThread.shop_name || "shop"}`} thread={activeThread} onBack={() => setActiveThread(null)} /> : <div className="thread-list">{threads.map((thread) => <button className="thread-row" key={`${thread.product_id}-${thread.customer_id}`} onClick={() => setActiveThread(thread)}><div><b>{thread.product_name}</b><span>{thread.shop_name} · {thread.message_count} message{thread.message_count > 1 ? "s" : ""}</span><small>{thread.last_body}</small></div><em>{new Date(thread.last_created_at).toLocaleDateString()}</em></button>)}</div>}</section>
   </div>;
 }
 
-function FarmerDashboard({ onFlash }) {
+function ShopDashboard({ onFlash }) {
   const [dashboard, setDashboard] = useState(null);
   const [meta, setMeta] = useState({ categories: CATEGORIES, seasons: SEASONS });
   const [threads, setThreads] = useState([]);
@@ -501,10 +501,10 @@ function FarmerDashboard({ onFlash }) {
   const [form, setForm] = useState(blankForm);
   const [editingId, setEditingId] = useState(null);
   const [error, setError] = useState("");
-  const refresh = () => Promise.all([api.farmerDashboard(), api.meta(), api.farmerThreads().catch(() => ({ threads: [] }))]).then(([dash, metadata, messageData]) => {
+  const refresh = () => Promise.all([api.shopDashboard(), api.meta(), api.shopThreads().catch(() => ({ threads: [] }))]).then(([dash, metadata, messageData]) => {
     setDashboard(dash);
     setMeta(metadata);
-    setPhoneDraft(dash.user.farmer_profile?.phone || "");
+    setPhoneDraft(dash.user.shop_profile?.phone || "");
     setThreads(messageData.threads || []);
     if (metadata.categories?.length && !metadata.categories.includes(form.category)) {
       setForm((current) => ({ ...current, category: metadata.categories[0] }));
@@ -516,10 +516,10 @@ function FarmerDashboard({ onFlash }) {
     setError("");
     try {
       if (editingId) {
-        await api.farmerListingUpdate(editingId, form);
+        await api.shopListingUpdate(editingId, form);
         onFlash("Listing updated");
       } else {
-        await api.farmerListing(form);
+        await api.shopListing(form);
         onFlash("Listing published");
       }
       setEditingId(null);
@@ -545,13 +545,13 @@ function FarmerDashboard({ onFlash }) {
     catch (err) { setError(err.message); }
   };
   if (error && !dashboard) return <div className="page"><InlineError message={error} /></div>;
-  if (!dashboard) return <div className="page empty-state">Loading farmer dashboard…</div>;
+  if (!dashboard) return <div className="page empty-state">Loading shop dashboard…</div>;
   const pending = dashboard.verification_status !== "approved";
-  return <div className="page dashboard-page"><SectionHeading eyebrow="FARMER / DASHBOARD" title={dashboard.user.farmer_profile?.farm_name || dashboard.user.display_name} detail={dashboard.user.farmer_profile?.region || "Azerbaijan"} />
-    {pending && <div className="verification-banner"><div><span className="status-pip orange-pip" /><strong>Verification {dashboard.verification_status.replaceAll("_", " ")}</strong></div><span>Your farm profile is being reviewed. Listing publication unlocks after approval.</span></div>}
+  return <div className="page dashboard-page"><SectionHeading eyebrow="SHOP / DASHBOARD" title={dashboard.user.shop_profile?.shop_name || dashboard.user.display_name} detail={dashboard.user.shop_profile?.region || "Azerbaijan"} />
+    {pending && <div className="verification-banner"><div><span className="status-pip orange-pip" /><strong>Verification {dashboard.verification_status.replaceAll("_", " ")}</strong></div><span>Your shop profile is being reviewed. Listing publication unlocks after approval.</span></div>}
     <section className="dashboard-section contact-section"><div className="section-title-row"><h2>Contact number</h2><span className="muted">Shown on your listings for direct calls</span></div><div className="phone-row"><input value={phoneDraft} onChange={(event) => setPhoneDraft(event.target.value)} placeholder="+994 22 216 01 45" /><button className="button button-small" onClick={savePhone}>Save number</button></div><small className="muted">There are no delivery hubs yet, so buyers arrange handover by calling or messaging you.</small></section>
     <div className="metric-grid"><Metric label="Listings" value={dashboard.listing_count} /></div>
-    <div className="dashboard-columns farmer-columns"><section className="dashboard-section"><div className="section-title-row"><h2>Your listings</h2><span className="muted">{pending ? "Publishing locked" : "Manage your catalog"}</span></div>{error && <InlineError message={error} />}{!pending && <form className="listing-form" onSubmit={saveListing}><Field label="Product name" value={form.name} onChange={(value) => setForm({ ...form, name: value })} placeholder="e.g. Orchard apples" /><label><span>Category</span><select value={form.category} onChange={(event) => setForm({ ...form, category: event.target.value })}>{(meta.categories || CATEGORIES).map((category) => <option key={category}>{category}</option>)}</select></label><div className="form-row"><Field label="Price / AZN" type="number" min="0" step="0.01" value={form.price_azn} onChange={(value) => setForm({ ...form, price_azn: value })} placeholder="4.50" /><Field label="Stock" type="number" min="0" step="1" value={form.stock} onChange={(value) => setForm({ ...form, stock: value })} placeholder="20" /></div><Field label="Season window" value={form.season} onChange={(value) => setForm({ ...form, season: value })} placeholder="August–October" /><Field label="Real image URL" type="url" value={form.image_url} onChange={(value) => setForm({ ...form, image_url: value })} placeholder="https://..." /><Field label="Description" value={form.description} onChange={(value) => setForm({ ...form, description: value })} placeholder="How this crop is grown" /><button className="button">{editingId ? "Save listing" : "Publish listing"}</button>{editingId && <button type="button" className="text-button" onClick={() => { setEditingId(null); setForm(blankForm); }}>Cancel edit</button>}</form>}{dashboard.listings.length ? <div className="listing-list">{dashboard.listings.map((listing) => <div className="listing-row" key={listing.id}><img src={listing.image_url} alt="" /><div><b>{listing.name}</b><span>{listing.category} · {listing.stock} in stock</span></div><strong>{money(listing.price_azn)}</strong><button className="text-button" onClick={() => editListing(listing)}>Edit</button><button className="text-button danger-text" onClick={async () => { try { await api.farmerListingDelete(listing.id); onFlash("Listing archived"); await refresh(); } catch (err) { setError(err.message); } }}>Archive</button></div>)}</div> : <div className="empty-state compact">No listings yet.</div>}</section></div>
+    <div className="dashboard-columns shop-columns"><section className="dashboard-section"><div className="section-title-row"><h2>Your listings</h2><span className="muted">{pending ? "Publishing locked" : "Manage your catalog"}</span></div>{error && <InlineError message={error} />}{!pending && <form className="listing-form" onSubmit={saveListing}><Field label="Product name" value={form.name} onChange={(value) => setForm({ ...form, name: value })} placeholder="e.g. Orchard apples" /><label><span>Category</span><select value={form.category} onChange={(event) => setForm({ ...form, category: event.target.value })}>{(meta.categories || CATEGORIES).map((category) => <option key={category}>{category}</option>)}</select></label><div className="form-row"><Field label="Price / AZN" type="number" min="0" step="0.01" value={form.price_azn} onChange={(value) => setForm({ ...form, price_azn: value })} placeholder="4.50" /><Field label="Stock" type="number" min="0" step="1" value={form.stock} onChange={(value) => setForm({ ...form, stock: value })} placeholder="20" /></div><Field label="Season window" value={form.season} onChange={(value) => setForm({ ...form, season: value })} placeholder="August–October" /><Field label="Real image URL" type="url" value={form.image_url} onChange={(value) => setForm({ ...form, image_url: value })} placeholder="https://..." /><Field label="Description" value={form.description} onChange={(value) => setForm({ ...form, description: value })} placeholder="How this crop is grown" /><button className="button">{editingId ? "Save listing" : "Publish listing"}</button>{editingId && <button type="button" className="text-button" onClick={() => { setEditingId(null); setForm(blankForm); }}>Cancel edit</button>}</form>}{dashboard.listings.length ? <div className="listing-list">{dashboard.listings.map((listing) => <div className="listing-row" key={listing.id}><img src={listing.image_url} alt="" /><div><b>{listing.name}</b><span>{listing.category} · {listing.stock} in stock</span></div><strong>{money(listing.price_azn)}</strong><button className="text-button" onClick={() => editListing(listing)}>Edit</button><button className="text-button danger-text" onClick={async () => { try { await api.shopListingDelete(listing.id); onFlash("Listing archived"); await refresh(); } catch (err) { setError(err.message); } }}>Archive</button></div>)}</div> : <div className="empty-state compact">No listings yet.</div>}</section></div>
     <section className="dashboard-section messages-section"><div className="section-title-row"><h2>Buyer messages</h2><span className="muted">{threads.length ? `${threads.length} conversation${threads.length > 1 ? "s" : ""}` : "Reply from your listings"}</span></div>{threads.length === 0 && !activeThread ? <p className="muted">No buyer questions yet. Buyers reach out from your product pages.</p> : activeThread ? <MessageThreadPanel productId={activeThread.product_id} heading={`${activeThread.product_name || "Product"} · ${activeThread.customer_name || "buyer"}`} thread={activeThread} onBack={() => setActiveThread(null)} /> : <div className="thread-list">{threads.map((thread) => <button className="thread-row" key={`${thread.product_id}-${thread.customer_id}`} onClick={() => setActiveThread(thread)}><div><b>{thread.product_name}</b><span>{thread.customer_name} · {thread.message_count} message{thread.message_count > 1 ? "s" : ""}</span><small>{thread.last_body}</small></div><em>{new Date(thread.last_created_at).toLocaleDateString()}</em></button>)}</div>}</section>
   </div>;
 }
@@ -563,13 +563,13 @@ function AdminDashboard({ onFlash }) {
   const [newRegion, setNewRegion] = useState("");
   const refresh = () => Promise.all([
     api.adminDashboard(),
-    api.adminFarmers("pending_verification"),
+    api.adminShops("pending_verification"),
     api.adminUsers(),
     api.adminCategories(),
     api.adminRegions(),
-  ]).then(([dashboard, farmers, users, categories, regions]) => setData({
+  ]).then(([dashboard, shops, users, categories, regions]) => setData({
     dashboard,
-    farmers: farmers.farmers || [],
+    shops: shops.shops || [],
     users: users.users || [],
     categories: categories.categories || [],
     regions: regions.regions || [],
@@ -597,9 +597,9 @@ function AdminDashboard({ onFlash }) {
   const { dashboard } = data;
   return <div className="page dashboard-page"><SectionHeading eyebrow="ADMIN / OPERATIONS" title="Marketplace control." detail="Verification and account health." />
     {error && <InlineError message={error} />}
-    <div className="metric-grid"><Metric label="Pending farms" value={dashboard.pending_farmer_count} accent="orange" /><Metric label="Listings" value={dashboard.listing_count} /><Metric label="Users" value={dashboard.user_count} /></div>
-    <div className="admin-grid"><section className="dashboard-section"><div className="section-title-row"><h2>Verification queue</h2><span className="muted">{data.farmers.length} waiting</span></div>{data.farmers.length ? data.farmers.map((farmer) => <div className="queue-row" key={farmer.user.id}><div><b>{farmer.profile.farm_name}</b><span>{farmer.user.email} · {farmer.profile.region}</span><small>Document: {farmer.profile.document_reference}</small></div><div className="row-actions"><button className="button button-small" onClick={() => act(api.approveFarmer, farmer.user.id, "Farmer approved")}>Approve</button><button className="text-button danger-text" onClick={() => act(api.suspendFarmer, farmer.user.id, "Farmer suspended")}>Suspend</button></div></div>) : <div className="empty-state compact">No pending applications.</div>}</section>
-      <section className="dashboard-section"><div className="section-title-row"><h2>User management</h2><span className="muted">Suspend / restore</span></div>{data.users.map((user) => <div className="user-row" key={user.id}><div><b>{user.display_name}</b><span>{user.email} · {user.role}</span></div>{user.role !== "admin" && <button className="text-button" onClick={() => act(user.account_status === "suspended" ? (user.role === "farmer" ? api.restoreFarmer : api.restoreUser) : api.suspendUser, user.id, user.account_status === "suspended" ? "User restored" : "User suspended")}>{user.account_status === "suspended" ? "Restore" : "Suspend"}</button>}</div>)}</section>
+    <div className="metric-grid"><Metric label="Pending shops" value={dashboard.pending_shop_count} accent="orange" /><Metric label="Listings" value={dashboard.listing_count} /><Metric label="Users" value={dashboard.user_count} /></div>
+    <div className="admin-grid"><section className="dashboard-section"><div className="section-title-row"><h2>Verification queue</h2><span className="muted">{data.shops.length} waiting</span></div>{data.shops.length ? data.shops.map((shopEntry) => <div className="queue-row" key={shopEntry.user.id}><div><b>{shopEntry.profile.shop_name}</b><span>{shopEntry.user.email} · {shopEntry.profile.region}</span></div><div className="row-actions"><button className="button button-small" onClick={() => act(api.approveShop, shopEntry.user.id, "Shop approved")}>Approve</button><button className="text-button danger-text" onClick={() => act(api.suspendShop, shopEntry.user.id, "Shop suspended")}>Suspend</button></div></div>) : <div className="empty-state compact">No pending applications.</div>}</section>
+      <section className="dashboard-section"><div className="section-title-row"><h2>User management</h2><span className="muted">Suspend / restore</span></div>{data.users.map((user) => <div className="user-row" key={user.id}><div><b>{user.display_name}</b><span>{user.email} · {user.role}</span></div>{user.role !== "admin" && <button className="text-button" onClick={() => act(user.account_status === "suspended" ? (user.role === "shop" ? api.restoreShop : api.restoreUser) : api.suspendUser, user.id, user.account_status === "suspended" ? "User restored" : "User suspended")}>{user.account_status === "suspended" ? "Restore" : "Suspend"}</button>}</div>)}</section>
       <section className="dashboard-section taxonomy-section"><div className="section-title-row"><h2>Catalog controls</h2><span className="muted">Categories / regions</span></div><div className="taxonomy-grid"><div><h3>Categories</h3><div className="taxonomy-list">{data.categories.map((category) => <div className="taxonomy-item" key={category.id}><span className={category.active ? "" : "inactive-label"}>{category.name}</span><button className="text-button" onClick={() => category.active ? act(api.archiveCategory, category.id, "Category archived") : activateCategory(category.name)}>{category.active ? "Archive" : "Activate"}</button></div>)}</div><label className="taxonomy-form"><span>Activate allowed category</span><select value={newCategory} onChange={(event) => setNewCategory(event.target.value)}>{CATEGORIES.map((category) => <option key={category}>{category}</option>)}</select><button className="button button-small" onClick={createCategory}>Activate</button></label></div><div><h3>Regions</h3><div className="taxonomy-list">{data.regions.map((region) => <div className="taxonomy-item" key={region.id}><span className={region.active ? "" : "inactive-label"}>{region.name}</span><button className="text-button" onClick={() => region.active ? act(api.archiveRegion, region.id, "Region archived") : activateRegion(region.name)}>{region.active ? "Archive" : "Activate"}</button></div>)}</div><form className="taxonomy-form" onSubmit={createRegion}><span>Add region</span><input value={newRegion} onChange={(event) => setNewRegion(event.target.value)} placeholder="e.g. Nakhchivan" required /><button className="button button-small">Add region</button></form></div></div></section>
     </div>
   </div>;

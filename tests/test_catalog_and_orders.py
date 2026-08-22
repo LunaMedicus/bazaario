@@ -7,8 +7,8 @@ def bearer(token):
 
 def test_non_agricultural_category_is_rejected_with_422(client, auth_tokens):
     response = client.post(
-        "/api/farmer/listings",
-        headers=bearer(auth_tokens["farmer"]),
+        "/api/shop/listings",
+        headers=bearer(auth_tokens["shop"]),
         json={
             "name": "Wireless Speaker",
             "category": "Electronics",
@@ -25,8 +25,8 @@ def test_non_agricultural_category_is_rejected_with_422(client, auth_tokens):
 
 def test_listing_rejects_non_hotlink_image_sources(client, auth_tokens):
     response = client.post(
-        "/api/farmer/listings",
-        headers=bearer(auth_tokens["farmer"]),
+        "/api/shop/listings",
+        headers=bearer(auth_tokens["shop"]),
         json={
             "name": "Sample Apples",
             "category": "Fruit",
@@ -43,8 +43,8 @@ def test_listing_rejects_non_hotlink_image_sources(client, auth_tokens):
 
 def test_listing_rejects_an_allowed_host_that_is_not_a_live_image(client, auth_tokens):
     response = client.post(
-        "/api/farmer/listings",
-        headers=bearer(auth_tokens["farmer"]),
+        "/api/shop/listings",
+        headers=bearer(auth_tokens["shop"]),
         json={
             "name": "Missing Photo Apples",
             "category": "Fruit",
@@ -61,8 +61,8 @@ def test_listing_rejects_an_allowed_host_that_is_not_a_live_image(client, auth_t
 
 def test_non_finite_price_is_rejected_with_422(client, auth_tokens):
     response = client.post(
-        "/api/farmer/listings",
-        headers=bearer(auth_tokens["farmer"]),
+        "/api/shop/listings",
+        headers=bearer(auth_tokens["shop"]),
         json={
             "name": "Invalid Price Apples",
             "category": "Fruit",
@@ -123,12 +123,12 @@ def test_customer_reviews_a_product_and_updates_their_review(client, auth_tokens
     assert detail["review_count"] == 1
 
 
-def test_farmer_cannot_review_products(client, auth_tokens):
+def test_shop_accounts_cannot_review_products(client, auth_tokens):
     product_id = client.get("/api/products").get_json()["products"][0]["id"]
 
     blocked = client.post(
         f"/api/products/{product_id}/reviews",
-        headers=bearer(auth_tokens["farmer"]),
+        headers=bearer(auth_tokens["shop"]),
         json={"rating": 5},
     )
 

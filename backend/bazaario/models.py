@@ -6,7 +6,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 from .extensions import db
 
 
-ALLOWED_ROLES = ("customer", "farmer", "admin")
+ALLOWED_ROLES = ("customer", "shop", "admin")
 
 
 def utc_now():
@@ -17,7 +17,7 @@ class User(db.Model):
     __tablename__ = "users"
     __table_args__ = (
         db.CheckConstraint(
-            "role IN ('customer', 'farmer', 'admin')",
+            "role IN ('customer', 'shop', 'admin')",
             name="ck_users_role",
         ),
         db.CheckConstraint(
@@ -34,10 +34,10 @@ class User(db.Model):
     account_status = db.Column(db.String(20), nullable=False, default="active")
     created_at = db.Column(db.DateTime, nullable=False, default=utc_now)
 
-    farmer_profile = db.relationship(
-        "FarmerProfile", back_populates="user", uselist=False, cascade="all, delete-orphan"
+    shop_profile = db.relationship(
+        "ShopProfile", back_populates="user", uselist=False, cascade="all, delete-orphan"
     )
-    products = db.relationship("Product", back_populates="farmer")
+    products = db.relationship("Product", back_populates="shop")
 
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
@@ -54,39 +54,37 @@ class User(db.Model):
             "account_status": self.account_status,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
-        if include_profile and self.role == "farmer" and self.farmer_profile:
-            payload["farmer_profile"] = self.farmer_profile.to_dict()
+        if include_profile and self.role == "shop" and self.shop_profile:
+            payload["shop_profile"] = self.shop_profile.to_dict()
         return payload
 
 
-class FarmerProfile(db.Model):
-    __tablename__ = "farmer_profiles"
+class ShopProfile(db.Model):
+    __tablename__ = "shop_profiles"
     __table_args__ = (
         db.CheckConstraint(
             "verification_status IN ('pending_verification', 'approved', 'suspended')",
-            name="ck_farmer_profiles_verification_status",
+            name="ck_shop_profiles_verification_status",
         ),
     )
 
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), unique=True, nullable=False)
-    farm_name = db.Column(db.String(160), nullable=False)
+    shop_name = db.Column(db.String(160), nullable=False)
     region = db.Column(db.String(120), nullable=False)
-    document_reference = db.Column(db.String(255), nullable=False)
     phone = db.Column(db.String(40), nullable=True)
     verification_status = db.Column(
         db.String(30), nullable=False, default="pending_verification"
     )
     verified_at = db.Column(db.DateTime, nullable=True)
 
-    user = db.relationship("User", back_populates="farmer_profile")
+    user = db.relationship("User", back_populates="shop_profile")
 
     def to_dict(self):
         return {
             "id": self.id,
-            "farm_name": self.farm_name,
+            "shop_name": self.shop_name,
             "region": self.region,
-            "document_reference": self.document_reference,
             "phone": self.phone,
             "verification_status": self.verification_status,
             "verified_at": self.verified_at.isoformat() if self.verified_at else None,
@@ -127,7 +125,7 @@ class Product(db.Model):
     )
 
     id = db.Column(db.Integer, primary_key=True)
-    farmer_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
+    shop_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
     name = db.Column(db.String(180), nullable=False)
     category = db.Column(db.String(80), nullable=False, index=True)
     price_azn = db.Column(db.Numeric(10, 2), nullable=False)
@@ -138,13 +136,13 @@ class Product(db.Model):
     available = db.Column(db.Boolean, nullable=False, default=True)
     created_at = db.Column(db.DateTime, nullable=False, default=utc_now)
 
-    farmer = db.relationship("User", back_populates="products")
+    shop = db.relationship("User", back_populates="products")
     reviews = db.relationship(
         "Review", back_populates="product", cascade="all, delete-orphan"
     )
 
     def to_dict(self):
-        profile = self.farmer.farmer_profile if self.farmer else None
+        profile = self.shop.shop_profile if self.shop else None
         return {
             "id": self.id,
             "name": self.name,
@@ -156,9 +154,9 @@ class Product(db.Model):
             "description": self.description,
             "available": self.available,
             "region": profile.region if profile else None,
-            "farm": {
-                "id": self.farmer_id,
-                "name": profile.farm_name if profile else self.farmer.display_name,
+            "shop": {
+                "id": self.shop_id,
+                "name": profile.shop_name if profile else self.shop.display_name,
                 "region": profile.region if profile else None,
                 "phone": profile.phone if profile else None,
             },
@@ -210,7 +208,7 @@ class Message(db.Model):
     customer_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
     sender_role = db.Column(
         db.String(20), nullable=False
-    )  # "customer" or "farmer"; farmer identity = product.farmer_id
+    )  # "customer" or "shop"; shop identity = product.shop_id
     body = db.Column(db.Text, nullable=False)
     created_at = db.Column(db.DateTime, nullable=False, default=utc_now)
 
@@ -227,7 +225,7 @@ class Message(db.Model):
             "sender": (
                 self.customer.display_name
                 if self.sender_role == "customer" and self.customer
-                else (self.product.farmer.display_name if self.product and self.product.farmer else None)
+                else (self.product.shop.display_name if self.product and self.product.shop else None)
             ),
             "body": self.body,
             "created_at": self.created_at.isoformat() if self.created_at else None,

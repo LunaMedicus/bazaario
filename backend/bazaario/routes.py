@@ -17,7 +17,7 @@ from sqlalchemy.exc import IntegrityError
 from .extensions import db
 from .models import (
     Category,
-    FarmerProfile,
+    ShopProfile,
     Message,
     Product,
     Region,
@@ -259,12 +259,12 @@ def _product_payload(data):
 
 
 def _ensure_can_publish(user):
-    profile = user.farmer_profile
+    profile = user.shop_profile
     if not profile or profile.verification_status != "approved":
         raise ApiError(
-            "Your farm must be approved before publishing listings",
+            "Your shop must be approved before publishing listings",
             403,
-            "farmer_verification_required",
+            "shop_verification_required",
         )
 
 
@@ -286,24 +286,22 @@ def register_customer():
     return jsonify({"user": user.to_dict(), "message": "Customer account created"}), 201
 
 
-@api.post("/auth/register/farmer")
-def register_farmer():
+@api.post("/auth/register/shop")
+def register_shop():
     data = _data()
-    farm_name = _text(data, "farm_name", 160)
+    shop_name = _text(data, "shop_name", 160)
     region = _text(data, "region", 120)
-    document_reference = _text(data, "document_reference", 255)
-    user = _create_user(data, "farmer")
-    profile = FarmerProfile(
+    user = _create_user(data, "shop")
+    profile = ShopProfile(
         user_id=user.id,
-        farm_name=farm_name,
+        shop_name=shop_name,
         region=region,
-        document_reference=document_reference,
         phone=_normalise_phone(data.get("phone")),
         verification_status="pending_verification",
     )
     db.session.add(profile)
     _commit()
-    return jsonify({"user": user.to_dict(), "message": "Farmer application submitted"}), 201
+    return jsonify({"user": user.to_dict(), "message": "Shop application submitted"}), 201
 
 
 @api.post("/auth/login")
@@ -340,13 +338,13 @@ def meta():
 def products():
     query = (
         Product.query
-        .join(User, Product.farmer_id == User.id)
-        .join(FarmerProfile, FarmerProfile.user_id == User.id)
+        .join(User, Product.shop_id == User.id)
+        .join(ShopProfile, ShopProfile.user_id == User.id)
         .filter(
             Product.available.is_(True),
             Product.stock > 0,
             User.account_status == "active",
-            FarmerProfile.verification_status == "approved",
+            ShopProfile.verification_status == "approved",
         )
     )
     category = request.args.get("category")
@@ -355,7 +353,7 @@ def products():
             raise ApiError("Only agricultural categories are allowed", 422, "invalid_category")
         query = query.filter(Product.category == category)
     if request.args.get("region"):
-        query = query.filter(FarmerProfile.region == request.args["region"])
+        query = query.filter(ShopProfile.region == request.args["region"])
     if request.args.get("season"):
         season_terms = SEASON_TERMS.get(request.args["season"], (request.args["season"],))
         query = query.filter(
@@ -372,13 +370,13 @@ def products():
 def product_detail(product_id):
     product = (
         Product.query
-        .join(User, Product.farmer_id == User.id)
-        .join(FarmerProfile, FarmerProfile.user_id == User.id)
+        .join(User, Product.shop_id == User.id)
+        .join(ShopProfile, ShopProfile.user_id == User.id)
         .filter(
             Product.id == product_id,
             Product.available.is_(True),
             User.account_status == "active",
-            FarmerProfile.verification_status == "approved",
+            ShopProfile.verification_status == "approved",
         )
         .first()
     )
@@ -396,12 +394,12 @@ def create_product_review(product_id):
     user = _current_user()
     product = (
         Product.query
-        .join(User, Product.farmer_id == User.id)
-        .join(FarmerProfile, FarmerProfile.user_id == User.id)
+        .join(User, Product.shop_id == User.id)
+        .join(ShopProfile, ShopProfile.user_id == User.id)
         .filter(
             Product.id == product_id,
             User.account_status == "active",
-            FarmerProfile.verification_status == "approved",
+            ShopProfile.verification_status == "approved",
         )
         .first()
     )
@@ -471,14 +469,14 @@ def _normalise_phone(value):
     return phone
 
 
-@api.put("/farmer/phone")
+@api.put("/shop/phone")
 @jwt_required()
-@role_required("farmer")
-def update_farmer_phone():
+@role_required("shop")
+def update_shop_phone():
     user = _current_user()
-    profile = user.farmer_profile
+    profile = user.shop_profile
     if not profile:
-        raise ApiError("Farmer profile not found", 404, "not_found")
+        raise ApiError("Shop profile not found", 404, "not_found")
     data = _data()
     profile.phone = _normalise_phone(data.get("phone"))
     _commit()
@@ -497,8 +495,8 @@ def _thread_digests(messages, name_for_customer):
                 "product_name": message.product.name if message.product else None,
                 "customer_id": message.customer_id,
                 "customer_name": name_for_customer(message),
-                "farmer_name": message.product.farmer.display_name
-                if message.product and message.product.farmer
+                "shop_name": message.product.shop.display_name
+                if message.product and message.product.shop
                 else None,
                 "message_count": 0,
                 "last_body": None,
@@ -514,14 +512,14 @@ def _thread_digests(messages, name_for_customer):
     return [threads[key] for key in order]
 
 
-@api.get("/farmer/messages")
+@api.get("/shop/messages")
 @jwt_required()
-@role_required("farmer")
-def farmer_messages():
+@role_required("shop")
+def shop_messages():
     user = _current_user()
     messages = (
         Message.query.join(Product, Message.product_id == Product.id)
-        .filter(Product.farmer_id == user.id)
+        .filter(Product.shop_id == user.id)
         .order_by(Message.created_at.asc(), Message.id.asc())
         .all()
     )
@@ -541,8 +539,8 @@ def customer_messages():
     )
     digests = _thread_digests(
         messages,
-        lambda message: message.product.farmer.display_name
-        if message.product and message.product.farmer
+        lambda message: message.product.shop.display_name
+        if message.product and message.product.shop
         else None,
     )
     return jsonify({"threads": list(reversed(digests))})
@@ -552,12 +550,12 @@ def _load_product_for_messaging(product_id, user):
     product = db.session.get(Product, product_id)
     if not product:
         raise ApiError("Product not found", 404, "not_found")
-    if user.role == "farmer":
-        if product.farmer_id != user.id:
+    if user.role == "shop":
+        if product.shop_id != user.id:
             raise ApiError("Product not found", 404, "not_found")
-        return product, "farmer"
+        return product, "shop"
     if user.role != "customer":
-        raise ApiError("Only customers and farmers exchange messages", 403, "forbidden")
+        raise ApiError("Only customers and shops exchange messages", 403, "forbidden")
     return product, "customer"
 
 
@@ -587,7 +585,7 @@ def send_product_message(product_id):
     data = _data()
     body = _text(data, "body", 2000)
     customer_id = user.id
-    if role == "farmer":
+    if role == "shop":
         target = data.get("customer_id")
         if isinstance(target, bool) or not isinstance(target, int):
             raise ApiError("customer_id is required to reply in a thread", 422, "validation_error")
@@ -605,53 +603,53 @@ def send_product_message(product_id):
     return jsonify({"message": message.to_dict()}), 201
 
 
-@api.get("/farmer/dashboard")
+@api.get("/shop/dashboard")
 @jwt_required()
-@role_required("farmer")
-def farmer_dashboard():
+@role_required("shop")
+def shop_dashboard():
     user = _current_user()
-    profile = user.farmer_profile
+    profile = user.shop_profile
     return jsonify(
         {
             "user": user.to_dict(),
             "verification_status": profile.verification_status if profile else "pending_verification",
-            "listing_count": Product.query.filter_by(farmer_id=user.id).count(),
-            "listings": [product.to_dict() for product in Product.query.filter_by(farmer_id=user.id).order_by(Product.created_at.desc()).all()],
+            "listing_count": Product.query.filter_by(shop_id=user.id).count(),
+            "listings": [product.to_dict() for product in Product.query.filter_by(shop_id=user.id).order_by(Product.created_at.desc()).all()],
         }
     )
 
 
-@api.get("/farmer/listings")
+@api.get("/shop/listings")
 @jwt_required()
-@role_required("farmer")
-def farmer_listings():
+@role_required("shop")
+def shop_listings():
     user = _current_user()
-    return jsonify({"listings": [product.to_dict() for product in Product.query.filter_by(farmer_id=user.id).order_by(Product.created_at.desc()).all()]})
+    return jsonify({"listings": [product.to_dict() for product in Product.query.filter_by(shop_id=user.id).order_by(Product.created_at.desc()).all()]})
 
 
-@api.post("/farmer/listings")
+@api.post("/shop/listings")
 @jwt_required()
-@role_required("farmer")
+@role_required("shop")
 def create_listing():
     user = _current_user()
     _ensure_can_publish(user)
     data = _data()
     payload = _product_payload(data)
     _verify_image_url(payload["image_url"])
-    product = Product(farmer_id=user.id, **payload)
+    product = Product(shop_id=user.id, **payload)
     db.session.add(product)
     _commit()
     return jsonify({"product": product.to_dict()}), 201
 
 
-@api.put("/farmer/listings/<int:product_id>")
+@api.put("/shop/listings/<int:product_id>")
 @jwt_required()
-@role_required("farmer")
+@role_required("shop")
 def update_listing(product_id):
     user = _current_user()
     _ensure_can_publish(user)
     product = db.session.get(Product, product_id)
-    if not product or product.farmer_id != user.id:
+    if not product or product.shop_id != user.id:
         raise ApiError("Listing not found", 404, "not_found")
     data = _data()
     payload = _product_payload(data)
@@ -662,14 +660,14 @@ def update_listing(product_id):
     return jsonify({"product": product.to_dict()})
 
 
-@api.delete("/farmer/listings/<int:product_id>")
+@api.delete("/shop/listings/<int:product_id>")
 @jwt_required()
-@role_required("farmer")
+@role_required("shop")
 def delete_listing(product_id):
     user = _current_user()
     _ensure_can_publish(user)
     product = db.session.get(Product, product_id)
-    if not product or product.farmer_id != user.id:
+    if not product or product.shop_id != user.id:
         raise ApiError("Listing not found", 404, "not_found")
     product.available = False
     _commit()
@@ -680,11 +678,11 @@ def delete_listing(product_id):
 @jwt_required()
 @role_required("admin")
 def admin_dashboard():
-    pending = FarmerProfile.query.filter_by(verification_status="pending_verification").count()
+    pending = ShopProfile.query.filter_by(verification_status="pending_verification").count()
     return jsonify(
         {
             "user": _current_user().to_dict(),
-            "pending_farmer_count": pending,
+            "pending_shop_count": pending,
             "user_count": User.query.count(),
             "listing_count": Product.query.filter_by(available=True).count(),
             "category_count": Category.query.filter_by(active=True).count(),
@@ -693,16 +691,16 @@ def admin_dashboard():
     )
 
 
-@api.get("/admin/farmers")
+@api.get("/admin/shops")
 @jwt_required()
 @role_required("admin")
-def admin_farmers():
-    query = FarmerProfile.query.join(User).order_by(FarmerProfile.id.desc())
+def admin_shops():
+    query = ShopProfile.query.join(User).order_by(ShopProfile.id.desc())
     if request.args.get("status"):
-        query = query.filter(FarmerProfile.verification_status == request.args["status"])
+        query = query.filter(ShopProfile.verification_status == request.args["status"])
     return jsonify(
         {
-            "farmers": [
+            "shops": [
                 {
                     "user": profile.user.to_dict(include_profile=False),
                     "profile": profile.to_dict(),
@@ -713,44 +711,44 @@ def admin_farmers():
     )
 
 
-@api.post("/admin/farmers/<int:user_id>/approve")
+@api.post("/admin/shops/<int:user_id>/approve")
 @jwt_required()
 @role_required("admin")
-def approve_farmer(user_id):
-    profile = FarmerProfile.query.filter_by(user_id=user_id).first()
+def approve_shop(user_id):
+    profile = ShopProfile.query.filter_by(user_id=user_id).first()
     if not profile:
-        raise ApiError("Farmer profile not found", 404, "not_found")
+        raise ApiError("Shop profile not found", 404, "not_found")
     profile.verification_status = "approved"
     profile.verified_at = utc_now()
     profile.user.account_status = "active"
     _commit()
-    return jsonify({"farmer": profile.user.to_dict(), "message": "Farmer approved"})
+    return jsonify({"shop": profile.user.to_dict(), "message": "Shop approved"})
 
 
-@api.post("/admin/farmers/<int:user_id>/suspend")
+@api.post("/admin/shops/<int:user_id>/suspend")
 @jwt_required()
 @role_required("admin")
-def suspend_farmer(user_id):
-    profile = FarmerProfile.query.filter_by(user_id=user_id).first()
+def suspend_shop(user_id):
+    profile = ShopProfile.query.filter_by(user_id=user_id).first()
     if not profile:
-        raise ApiError("Farmer profile not found", 404, "not_found")
+        raise ApiError("Shop profile not found", 404, "not_found")
     profile.verification_status = "suspended"
     profile.user.account_status = "suspended"
     _commit()
-    return jsonify({"farmer": profile.user.to_dict(), "message": "Farmer suspended"})
+    return jsonify({"shop": profile.user.to_dict(), "message": "Shop suspended"})
 
 
-@api.post("/admin/farmers/<int:user_id>/restore")
+@api.post("/admin/shops/<int:user_id>/restore")
 @jwt_required()
 @role_required("admin")
-def restore_farmer(user_id):
-    profile = FarmerProfile.query.filter_by(user_id=user_id).first()
+def restore_shop(user_id):
+    profile = ShopProfile.query.filter_by(user_id=user_id).first()
     if not profile:
-        raise ApiError("Farmer profile not found", 404, "not_found")
+        raise ApiError("Shop profile not found", 404, "not_found")
     profile.verification_status = "approved"
     profile.user.account_status = "active"
     _commit()
-    return jsonify({"farmer": profile.user.to_dict(), "message": "Farmer restored"})
+    return jsonify({"shop": profile.user.to_dict(), "message": "Shop restored"})
 
 
 @api.get("/admin/users")

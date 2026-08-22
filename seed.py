@@ -17,8 +17,8 @@ if __name__ == "__main__":
         )
     with app.app_context():
         counts = seed_database()
-    print(f"Seeded {counts['farms']} farms, {counts['products']} products, and {counts['categories']} categories.")
+    print(f"Seeded {counts['shops']} shops, {counts['products']} products, and {counts['categories']} categories.")
     print("Demo credentials:")
     print("  admin@bazaario.az / " + DEMO_PASSWORDS["admin@bazaario.az"])
-    print("  farmer@bazaario.az / " + DEMO_PASSWORDS["farmer@bazaario.az"])
+    print("  shop@bazaario.az / " + DEMO_PASSWORDS["shop@bazaario.az"])
     print("  customer@bazaario.az / " + DEMO_PASSWORDS["customer@bazaario.az"])
