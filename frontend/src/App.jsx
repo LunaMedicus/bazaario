@@ -210,7 +210,6 @@ function SectionHeading({ eyebrow, title, detail }) {
 
 function CatalogView({ onNavigate }) {
   const t = useT();
-  const lang = useLang();
   const [products, setProducts] = useState([]);
   const [meta, setMeta] = useState({ categories: CATEGORIES, regions: [], seasons: SEASONS });
   const [filters, setFilters] = useState({ q: "", category: "", region: "", season: "" });
@@ -292,7 +291,7 @@ function CatalogView({ onNavigate }) {
       ) : products.length ? (
         <div className="product-grid">
           {products.map((product) => (
-            <ProductCard key={product.id} product={product} originalNames={cardNames} onOpen={() => onNavigate(`/product/${product.id}`)} />
+            <ProductCard key={product.id} product={product} onOpen={() => onNavigate(`/product/${product.id}`)} />
           ))}
         </div>
       ) : (
@@ -302,13 +301,10 @@ function CatalogView({ onNavigate }) {
   );
 }
 
-function ProductCard({ product, originalNames, onOpen }) {
+function ProductCard({ product, onOpen }) {
   const t = useT();
   const lang = useLang();
-  const shownName = originalNames?.[product.name] || product.name;
-  const shownCategory = product.category && !product.category.startsWith("cat\u002e")
-    ? product.category
-    : product.category;
+  const shownName = product.name;
   return (
     <article className="product-card">
       <button className="product-image-button" onClick={onOpen} aria-label={`View ${shownName}`}>
@@ -318,7 +314,7 @@ function ProductCard({ product, originalNames, onOpen }) {
       <div className="product-card-body">
         <div className="product-card-topline">
           <span>{t(`region.${product.region}`, {}, product.region)}</span>
-          <span>{t(`season.${product.season}`, {}, product.season)}</span>
+          <span>{localiseSeasonWindow(product.season, lang)}</span>
         </div>
         <button className="product-name" onClick={onOpen}>{shownName}</button>
         <div className="product-shop">{product.shop?.name}</div>
@@ -332,29 +328,36 @@ function ProductCard({ product, originalNames, onOpen }) {
 }
 
 function useTranslatedContent(lang) {
-  const [state, setState] = useState({ lang: null, names: {}, descriptions: {}, reviews: {}, working: false });
-  const run = async (payload) => {
+  const [state, setState] = useState({ lang: null, map: {}, working: false });
+  const run = async (texts) => {
     setState((current) => ({ ...current, lang, working: true }));
     try {
-      const texts = [
-        ...payload.names,
-        ...payload.descriptions,
-        ...payload.reviews,
-      ].filter(Boolean);
-      const map = await translateMany(texts, lang);
-      setState({
-        lang,
-        working: false,
-        names: Object.fromEntries(payload.names.filter(Boolean).map((name) => [name, map[name] || name])),
-        descriptions: Object.fromEntries(payload.descriptions.filter(Boolean).map((body) => [body, map[body] || body])),
-        reviews: Object.fromEntries(payload.reviews.filter(Boolean).map((body) => [body, map[body] || body])),
-      });
+      const clean = texts.filter(Boolean);
+      const result = await translateMany(clean, lang);
+      const map = {};
+      for (const text of clean) map[text] = result[text] || text;
+      setState({ lang, map, working: false });
     } catch {
-      setState({ lang, working: false, names: {}, descriptions: {}, reviews: {} });
+      setState({ lang, map: {}, working: false });
     }
   };
   return [state, run];
 }
+
+const MONTHS = {
+  az: ["Yanvar", "Fevral", "Mart", "Aprel", "May", "İyun", "İyul", "Avqust", "Sentyabr", "Oktyabr", "Noyabr", "Dekabr"],
+  ru: ["январь", "февраль", "март", "апрель", "май", "июнь", "июль", "август", "сентябрь", "октябрь", "ноябрь", "декабрь"],
+};
+
+function localiseSeasonWindow(season, lang) {
+  if (!season || (lang !== "az" && lang !== "ru")) return season;
+  const months = MONTHS[lang];
+  return String(season).replace(/[A-Z][a-z]+/g, (month) => {
+    const index = new Date(Date.parse(`${month} 1, 2000`)).getMonth();
+    return Number.isNaN(index) ? month : months[index];
+  });
+}
+
 
 function TranslateToggle({ translated, working, onTranslate, onShowOriginal }) {
   const t = useT();
@@ -375,10 +378,11 @@ function ProductDetail({ id, onNavigate, onFlash }) {
   useEffect(() => { load(); }, [id]);
   if (error) return <div className="page"><InlineError message={error} /></div>;
   if (!product) return <div className="page empty-state">{t("product.loading")}</div>;
-  const translated = content.lang === lang && Boolean(content.names[product.name]);
-  const shownName = translated ? content.names[product.name] : product.name;
+  const translated = content.lang === lang && Boolean(content.map[product.name]);
+  const shownName = translated ? content.map[product.name] : product.name;
+  const shownSeason = localiseSeasonWindow(product.season, lang);
   const shownDescription = translated
-    ? content.descriptions[product.description] || product.description
+    ? content.map[product.description] || product.description
     : product.description;
   return (
     <div className="page product-detail-page">
@@ -402,9 +406,9 @@ function ProductDetail({ id, onNavigate, onFlash }) {
             />
           </div>
           <div className="detail-shop"><span>{t("product.soldBy")}</span><strong>{product.shop?.name}</strong><small>{t(`region.${product.shop?.region}`, {}, product.shop?.region)}, Azerbaijan</small></div>
-          <div className="detail-season"><span>{t("product.season")}</span><strong>{t(`season.${product.season}`, {}, product.season)}</strong><span className="stock-note">{t("product.inStock", { n: product.stock })}</span></div>
+          <div className="detail-season"><span>{t("product.season")}</span><strong>{shownSeason}</strong><span className="stock-note">{t("product.inStock", { n: product.stock })}</span></div>
           <div className="detail-purchase"><strong>{money(product.price_azn)}</strong><span className="muted">{t("product.contactToBuy")}</span></div>
-          <ReviewSection productId={product.id} reviews={product.reviews} translations={translated ? content.reviews : null} onDone={() => { load().then(onFlash ? undefined : undefined); }} />
+          <ReviewSection productId={product.id} reviews={product.reviews} translations={translated ? content.map : null} onDone={() => { load().then(onFlash ? undefined : undefined); }} />
         </div>
       </section>
       <section className="seller-contact-section">
