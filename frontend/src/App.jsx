@@ -328,17 +328,21 @@ function ProductCard({ product, onOpen }) {
 }
 
 function useTranslatedContent(lang) {
-  const [state, setState] = useState({ lang: null, map: {}, working: false });
+  const [state, setState] = useState({ lang: null, map: {}, working: false, failed: false });
   const run = async (texts) => {
-    setState((current) => ({ ...current, lang, working: true }));
+    setState((current) => ({ ...current, lang, working: true, failed: false }));
     try {
       const clean = texts.filter(Boolean);
+      if (clean.length === 0) {
+        setState({ lang, map: {}, working: false, failed: false });
+        return;
+      }
       const result = await translateMany(clean, lang);
       const map = {};
       for (const text of clean) map[text] = result[text] || text;
-      setState({ lang, map, working: false });
+      setState({ lang, map, working: false, failed: false });
     } catch {
-      setState({ lang, map: {}, working: false });
+      setState({ lang, map: {}, working: false, failed: true });
     }
   };
   return [state, run];
@@ -359,12 +363,15 @@ function localiseSeasonWindow(season, lang) {
 }
 
 
-function TranslateToggle({ translated, working, onTranslate, onShowOriginal }) {
+function TranslateToggle({ translated, working, failed, onTranslate, onShowOriginal }) {
   const t = useT();
   return (
-    <button className="text-button translate-toggle" onClick={translated ? onShowOriginal : onTranslate} disabled={working}>
-      {working ? t("translate.working") : translated ? t("translate.original") : t("translate.show")}
-    </button>
+    <span className="translate-wrap">
+      <button className="text-button translate-toggle" onClick={translated ? onShowOriginal : onTranslate} disabled={working}>
+        {working ? t("translate.working") : translated ? t("translate.original") : t("translate.show")}
+      </button>
+      {failed && <small className="translate-failed">{t("translate.failed")}</small>}
+    </span>
   );
 }
 
@@ -398,6 +405,7 @@ function ProductDetail({ id, onNavigate, onFlash }) {
             <TranslateToggle
               translated={translated}
               working={content.working}
+              failed={content.lang === lang && content.failed}
               onTranslate={() => translateContent([
                 product.name,
                 product.description,
