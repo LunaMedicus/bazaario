@@ -262,21 +262,21 @@ function CatalogView({ onNavigate }) {
           <span>{t("filter.category")}</span>
           <select value={filters.category} onChange={(event) => setFilters({ ...filters, category: event.target.value })}>
             <option value="">{t("filter.allCategories")}</option>
-            {meta.categories.map((category) => <option key={category}>{t(`cat.${category}`, {}, category)}</option>)}
+            {meta.categories.map((category) => <option key={category} value={category}>{t(`cat.${category}`, {}, category)}</option>)}
           </select>
         </label>
         <label>
           <span>{t("filter.region")}</span>
           <select value={filters.region} onChange={(event) => setFilters({ ...filters, region: event.target.value })}>
             <option value="">{t("filter.everyRegion")}</option>
-            {meta.regions.map((region) => <option key={region}>{t(`region.${region}`, {}, region)}</option>)}
+            {meta.regions.map((region) => <option key={region} value={region}>{t(`region.${region}`, {}, region)}</option>)}
           </select>
         </label>
         <label>
           <span>{t("filter.season")}</span>
           <select value={filters.season} onChange={(event) => setFilters({ ...filters, season: event.target.value })}>
             <option value="">{t("filter.anySeason")}</option>
-            {meta.seasons.map((season) => <option key={season}>{t(`season.${season}`, {}, season)}</option>)}
+            {meta.seasons.map((season) => <option key={season} value={season}>{t(`season.${season}`, {}, season)}</option>)}
           </select>
         </label>
       </section>
