@@ -1,7 +1,6 @@
-// Image CDN helpers (McMaster serves every image through a tuned image CDN).
-// Wikimedia's thumbnailer only renders a fixed size ladder, so requested
-// widths snap to the nearest allowed size. Cards get 500px instead of
-// multi-hundred-KB originals; detail pages get 960px.
+// Image CDN helpers. Wikimedia's thumbnailer only renders a fixed size
+// ladder, so requested widths snap to the nearest allowed size. Cards get
+// 500px instead of multi-hundred-KB originals; detail pages get 960px.
 const LADDER = [250, 330, 500, 960, 1280];
 const CARD_WIDTH = 500;
 const DETAIL_WIDTH = 960;

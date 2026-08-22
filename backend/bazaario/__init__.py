@@ -11,8 +11,8 @@ def create_app(config_overrides=None):
     if config_overrides:
         app.config.update(config_overrides)
 
-    # McMaster-style delivery tuning: gzip JSON payloads (the catalog
-    # compresses roughly ten to one) so clients download far fewer bytes.
+    # Gzip JSON payloads. The catalog compresses roughly ten to one, so
+    # clients download far fewer bytes.
     app.config["COMPRESS_MIMETYPES"] = [
         "application/json",
         "text/html",
