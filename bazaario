@@ -26,7 +26,20 @@ need_venv() {
 
 case "${1:-help}" in
   setup)
-    python3 -m venv .venv
+    # psycopg-binary wheels only exist for specific CPython versions; prefer a
+    # known-good interpreter instead of whatever "python3" happens to be.
+    if command -v python3.11 >/dev/null 2>&1; then
+      SETUP_PY=python3.11
+    elif command -v python3.12 >/dev/null 2>&1; then
+      SETUP_PY=python3.12
+    elif command -v python3.13 >/dev/null 2>&1; then
+      SETUP_PY=python3.13
+    else
+      SETUP_PY=python3
+    fi
+    echo "Using $SETUP_PY for the virtualenv"
+    "$SETUP_PY" -m venv .venv
+    .venv/bin/pip install -q --upgrade pip
     .venv/bin/pip install -q -r requirements.txt
     (cd frontend && [ -d node_modules ] || npm install)
     echo "Setup complete. Next: ./bazaario seed && ./bazaario dev"
