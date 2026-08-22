@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { api, clearSession, getSession, saveSession } from "./api";
+import { LANGS, LangProvider, getInitialLang, storeLang, useT, useLang, useSetLang, translate } from "./i18n";
 
 const CATEGORIES = [
   "Fruit",
@@ -30,6 +31,12 @@ function money(value) {
 
 function App() {
   const route = useRoute();
+  const [lang, setLangState] = useState(getInitialLang);
+  const setLang = (next) => {
+    setLangState(next);
+    storeLang(next);
+  };
+  const t = (key, params) => translate(lang, key, params);
   const [session, setSession] = useState(getSession);
   const [notice, setNotice] = useState(null);
 
@@ -58,7 +65,7 @@ function App() {
         if (!active) return;
         clearSession();
         setSession(null);
-        flash("Your session has expired. Please sign in again.", "error");
+        flash(t("misc.sessionExpired"), "error");
         navigate("/login");
       });
     return () => { active = false; };
@@ -67,7 +74,7 @@ function App() {
   const onLogin = (payload) => {
     saveSession(payload);
     setSession(payload);
-    flash(`Signed in as ${payload.user.display_name}`);
+    flash(t("misc.signedInAs", { name: payload.user.display_name }));
     navigate("/dashboard");
   };
 
@@ -101,11 +108,31 @@ function App() {
   }
 
   return (
-    <div className="app-shell">
-      <Header session={session} onNavigate={navigate} onLogout={onLogout} />
-      {notice && <div className={`toast ${notice.kind}`}>{notice.message}</div>}
-      <main>{content}</main>
-      <Footer />
+    <LangProvider value={{ lang, setLang }}>
+      <div className="app-shell">
+        <Header session={session} onNavigate={navigate} onLogout={onLogout} />
+        {notice && <div className={`toast ${notice.kind}`}>{notice.message}</div>}
+        <main>{content}</main>
+        <Footer />
+      </div>
+    </LangProvider>
+  );
+}
+
+function LangSwitcher() {
+  const lang = useLang();
+  const setLang = useSetLang();
+  return (
+    <div className="lang-switcher" role="group" aria-label="Language">
+      {LANGS.map((entry) => (
+        <button
+          key={entry.code}
+          className={lang === entry.code ? "active" : ""}
+          onClick={() => setLang(entry.code)}
+        >
+          {entry.label}
+        </button>
+      ))}
     </div>
   );
 }
@@ -116,25 +143,48 @@ function Header({ session, onNavigate, onLogout }) {
       <button className="wordmark" onClick={() => onNavigate("/")} aria-label="Bazaario home">
         bazaario<span>.</span>
       </button>
-      <nav className="main-nav">
-        <button onClick={() => onNavigate("/")}>Catalog</button>
-        {session && <button onClick={() => onNavigate("/dashboard")}>Dashboard</button>}
-      </nav>
+      <Nav session={session} onNavigate={onNavigate} />
       <div className="header-actions">
+        <LangSwitcher />
         {session ? (
           <>
             <span className={`role-tag ${session.user.role}`}>{session.user.role}</span>
-            <button className="text-button" onClick={onLogout}>Sign out</button>
+            <SignOutButton onLogout={onLogout} />
           </>
         ) : (
           <>
-            <button className="text-button" onClick={() => onNavigate("/login")}>Sign in</button>
-            <button className="button button-small" onClick={() => onNavigate("/register")}>Join</button>
+            <SignInButton onNavigate={onNavigate} />
+            <JoinButton onNavigate={onNavigate} />
           </>
         )}
       </div>
     </header>
   );
+}
+
+function Nav({ session, onNavigate }) {
+  const t = useT();
+  return (
+    <nav className="main-nav">
+      <button onClick={() => onNavigate("/")}>{t("nav.catalog")}</button>
+      {session && <button onClick={() => onNavigate("/dashboard")}>{t("nav.dashboard")}</button>}
+    </nav>
+  );
+}
+
+function SignOutButton({ onLogout }) {
+  const t = useT();
+  return <button className="text-button" onClick={onLogout}>{t("nav.signOut")}</button>;
+}
+
+function SignInButton({ onNavigate }) {
+  const t = useT();
+  return <button className="text-button" onClick={() => onNavigate("/login")}>{t("nav.signIn")}</button>;
+}
+
+function JoinButton({ onNavigate }) {
+  const t = useT();
+  return <button className="button button-small" onClick={() => onNavigate("/register")}>{t("nav.join")}</button>;
 }
 
 function Footer() {
@@ -158,6 +208,7 @@ function SectionHeading({ eyebrow, title, detail }) {
 }
 
 function CatalogView({ onNavigate }) {
+  const t = useT();
   const [products, setProducts] = useState([]);
   const [meta, setMeta] = useState({ categories: CATEGORIES, regions: [], seasons: SEASONS });
   const [filters, setFilters] = useState({ q: "", category: "", region: "", season: "" });
@@ -194,49 +245,48 @@ function CatalogView({ onNavigate }) {
   return (
     <div className="page page-catalog">
       <section className="catalog-intro">
-        <h1>Catalog</h1>
-        <p className="intro-copy">Contact the shop directly to buy. There are no delivery hubs; buyers and shops agree on pickup and payment between themselves.</p>
+        <h1>{t("catalog.title")}</h1>
       </section>
 
       <section className="filter-bar" aria-label="Catalog filters">
         <label className="search-field">
-          <span>Search</span>
+          <span>{t("filter.search")}</span>
           <input
             value={filters.q}
             onChange={(event) => setFilters({ ...filters, q: event.target.value })}
-            placeholder="Apples, honey, tea..."
+            placeholder={t("filter.searchPlaceholder")}
           />
         </label>
         <label>
-          <span>Category</span>
+          <span>{t("filter.category")}</span>
           <select value={filters.category} onChange={(event) => setFilters({ ...filters, category: event.target.value })}>
-            <option value="">All categories</option>
+            <option value="">{t("filter.allCategories")}</option>
             {meta.categories.map((category) => <option key={category}>{category}</option>)}
           </select>
         </label>
         <label>
-          <span>Region</span>
+          <span>{t("filter.region")}</span>
           <select value={filters.region} onChange={(event) => setFilters({ ...filters, region: event.target.value })}>
-            <option value="">Every region</option>
+            <option value="">{t("filter.everyRegion")}</option>
             {meta.regions.map((region) => <option key={region}>{region}</option>)}
           </select>
         </label>
         <label>
-          <span>Season</span>
+          <span>{t("filter.season")}</span>
           <select value={filters.season} onChange={(event) => setFilters({ ...filters, season: event.target.value })}>
-            <option value="">Any season</option>
+            <option value="">{t("filter.anySeason")}</option>
             {meta.seasons.map((season) => <option key={season}>{season}</option>)}
           </select>
         </label>
       </section>
 
       <div className="catalog-meta">
-        <span>{loading ? "Loading catalog" : `${products.length} products`}</span>
-        <span>{meta.categories.length} active agricultural categories</span>
+        <span>{loading ? t("catalog.loading") : t("catalog.count", { n: products.length })}</span>
+        <span>{t("catalog.categoriesCount", { n: meta.categories.length })}</span>
       </div>
       {error && <InlineError message={error} />}
       {loading ? (
-        <div className="empty-state">Loading catalog…</div>
+        <div className="empty-state">{t("catalog.loading")}</div>
       ) : products.length ? (
         <div className="product-grid">
           {products.map((product) => (
@@ -244,13 +294,14 @@ function CatalogView({ onNavigate }) {
           ))}
         </div>
       ) : (
-        <div className="empty-state">No products match these filters.</div>
+        <div className="empty-state">{t("catalog.empty")}</div>
       )}
     </div>
   );
 }
 
 function ProductCard({ product, onOpen }) {
+  const t = useT();
   return (
     <article className="product-card">
       <button className="product-image-button" onClick={onOpen} aria-label={`View ${product.name}`}>
@@ -266,7 +317,7 @@ function ProductCard({ product, onOpen }) {
         <div className="product-shop">{product.shop?.name}</div>
         <div className="product-card-bottom">
           <strong>{money(product.price_azn)}</strong>
-          <button className="add-button" onClick={onOpen}>View</button>
+          <button className="add-button" onClick={onOpen}>{t("product.view")}</button>
         </div>
       </div>
     </article>
@@ -274,59 +325,62 @@ function ProductCard({ product, onOpen }) {
 }
 
 function ProductDetail({ id, onNavigate, onFlash }) {
+  const t = useT();
   const [product, setProduct] = useState(null);
   const [error, setError] = useState("");
   const load = () => api.product(id).then((data) => setProduct(data.product)).catch((err) => setError(err.message));
   useEffect(() => { load(); }, [id]);
   if (error) return <div className="page"><InlineError message={error} /></div>;
-  if (!product) return <div className="page empty-state">Loading product…</div>;
+  if (!product) return <div className="page empty-state">{t("product.loading")}</div>;
   return (
     <div className="page product-detail-page">
-      <button className="back-link" onClick={() => onNavigate("/")}>← Back to catalog</button>
+      <button className="back-link" onClick={() => onNavigate("/")}>{t("product.back")}</button>
       <section className="product-detail">
         <div className="detail-image-wrap"><img src={product.image_url} alt={product.name} /></div>
         <div className="detail-copy">
           <p className="eyebrow orange">{product.category} / {product.region}</p>
           <h1>{product.name}</h1>
           <p className="detail-description">{product.description}</p>
-          <div className="detail-shop"><span>Sold by</span><strong>{product.shop?.name}</strong><small>{product.shop?.region}, Azerbaijan</small></div>
-          <div className="detail-season"><span>Season</span><strong>{product.season}</strong><span className="stock-note">{product.stock} in stock</span></div>
-          <div className="detail-purchase"><strong>{money(product.price_azn)}</strong><span className="muted">Contact the shop to buy.</span></div>
+          <div className="detail-shop"><span>{t("product.soldBy")}</span><strong>{product.shop?.name}</strong><small>{product.shop?.region}, Azerbaijan</small></div>
+          <div className="detail-season"><span>{t("product.season")}</span><strong>{product.season}</strong><span className="stock-note">{t("product.inStock", { n: product.stock })}</span></div>
+          <div className="detail-purchase"><strong>{money(product.price_azn)}</strong><span className="muted">{t("product.contactToBuy")}</span></div>
           <ReviewSection productId={product.id} reviews={product.reviews} onDone={() => { load().then(onFlash ? undefined : undefined); }} />
         </div>
       </section>
       <section className="seller-contact-section">
         <SellerContact shop={product.shop} />
-        <MessageThreadPanel productId={product.id} heading={`Messages with ${product.shop?.name || "the shop"}`} />
+        <MessageThreadPanel productId={product.id} heading={t("messages.with", { shop: product.shop?.name || t("messages.withFallback") })} />
       </section>
     </div>
   );
 }
 
 function ReviewSection({ productId, reviews, onDone }) {
+  const t = useT();
   const session = getSession();
   const isCustomer = session?.user?.role === "customer";
   const mine = isCustomer && session ? (reviews || []).find((review) => review.customer === session.user.display_name) : null;
   return (
     <div className="review-section">
-      <h3>Reviews {reviews?.length ? `(${reviews.length})` : ""}</h3>
-      {!reviews?.length && <p className="muted">No reviews yet.</p>}
+      <h3>{t("reviews.title")} {reviews?.length ? `(${reviews.length})` : ""}</h3>
+      {!reviews?.length && <p className="muted">{t("reviews.none")}</p>}
       {reviews?.length > 0 && (
         <div className="review-list">
           {reviews.map((review) => (
-            <div className="review-line" key={review.id}><b>{"★".repeat(review.rating)}</b><span>{review.body || "No comment."}</span><small>{review.customer}</small></div>
+            <div className="review-line" key={review.id}><b>{"★".repeat(review.rating)}</b><span>{review.body || t("reviews.noComment")}</span><small>{review.customer}</small></div>
           ))}
         </div>
       )}
       {isCustomer && (
         <ReviewForm productId={productId} existing={mine} onSaved={onDone} />
       )}
-      {!session && <p className="muted">Sign in as a customer to leave a review.</p>}
+      {!session && <p className="muted">{t("reviews.signInPrompt")}</p>}
     </div>
   );
 }
 
 function ReviewForm({ productId, existing, onSaved }) {
+  const t = useT();
   const [rating, setRating] = useState(existing?.rating || 5);
   const [body, setBody] = useState(existing?.body || "");
   const [saving, setSaving] = useState(false);
@@ -340,9 +394,9 @@ function ReviewForm({ productId, existing, onSaved }) {
   };
   return (
     <form className="inline-form review-form" onSubmit={submit}>
-      <label>Rating <select value={rating} onChange={(event) => setRating(Number(event.target.value))}><option>5</option><option>4</option><option>3</option><option>2</option><option>1</option></select></label>
-      <input value={body} onChange={(event) => setBody(event.target.value)} placeholder={existing ? "Update your comment" : "What stood out?"} />
-      <button className="button button-small" disabled={saving}>{existing ? "Update review" : "Publish"}</button>
+      <label>{t("reviews.rating")} <select value={rating} onChange={(event) => setRating(Number(event.target.value))}><option>5</option><option>4</option><option>3</option><option>2</option><option>1</option></select></label>
+      <input value={body} onChange={(event) => setBody(event.target.value)} placeholder={existing ? t("reviews.updatePlaceholder") : t("reviews.placeholder")} />
+      <button className="button button-small" disabled={saving}>{existing ? t("reviews.update") : t("reviews.publish")}</button>
       {error && <InlineError message={error} />}
     </form>
   );
@@ -353,24 +407,26 @@ function telHref(phone) {
 }
 
 function SellerContact({ shop }) {
+  const t = useT();
   if (!shop?.phone) {
     return (
       <div className="seller-contact">
-        <h3>Call the seller</h3>
-        <p className="muted">This shop has not added a contact number yet. Send a message instead and they will reply here.</p>
+        <h3>{t("seller.title")}</h3>
+        <p className="muted">{t("seller.noPhone")}</p>
       </div>
     );
   }
   return (
     <div className="seller-contact">
-      <h3>Call the seller</h3>
-      <p>Bazaario has no delivery hubs yet, so orders are arranged directly with the shop.</p>
-      <a className="call-button" href={telHref(shop.phone)}>📞 Call {shop.phone}</a>
+      <h3>{t("seller.title")}</h3>
+      <p>{t("seller.hubs")}</p>
+      <a className="call-button" href={telHref(shop.phone)}>{t("seller.call", { phone: shop.phone })}</a>
     </div>
   );
 }
 
 function MessageThreadPanel({ productId, heading, thread, viewerRole, onBack }) {
+  const t = useT();
   const session = getSession();
   const [messages, setMessages] = useState(null);
   const [body, setBody] = useState("");
@@ -391,19 +447,19 @@ function MessageThreadPanel({ productId, heading, thread, viewerRole, onBack }) 
     <div className="message-panel">
       <div className="section-title-row">
         <h3>{heading}</h3>
-        {onBack && <button className="text-button" onClick={onBack}>← All conversations</button>}
+        {onBack && <button className="text-button" onClick={onBack}>{t("messages.allConversations")}</button>}
       </div>
-      {!session && <p className="muted">Sign in as a customer to message the seller about this listing.</p>}
+      {!session && <p className="muted">{t("messages.signInPrompt")}</p>}
       {session && error && <InlineError message={error} />}
       {session && (messages === null ? (
-        <p className="muted">Loading conversation…</p>
+<p className="muted">{t("messages.loading")}</p>
       ) : messages.length === 0 ? (
-        <p className="muted">No messages yet. Ask about availability, quantities or pickup.</p>
+<p className="muted">{t("messages.empty")}</p>
       ) : (
         <ul className="message-list">
           {messages.map((message) => (
             <li key={message.id} className={`message-line ${message.sender_role}`}>
-              <span className="message-meta">{message.sender_role === "customer" ? message.sender : "Shop"} · {new Date(message.created_at).toLocaleString()}</span>
+              <span className="message-meta">{message.sender_role === "customer" ? message.sender : t("messages.senderShop")} · {new Date(message.created_at).toLocaleString()}</span>
               <p>{message.body}</p>
             </li>
           ))}
@@ -411,8 +467,8 @@ function MessageThreadPanel({ productId, heading, thread, viewerRole, onBack }) 
       ))}
       {session && viewerRole !== "read-only" && (
         <form className="message-form" onSubmit={send}>
-          <input value={body} onChange={(event) => setBody(event.target.value)} placeholder="Write a message…" maxLength={2000} required />
-          <button className="button button-small" disabled={sending}>{sending ? "Sending…" : "Send"}</button>
+          <input value={body} onChange={(event) => setBody(event.target.value)} placeholder={t("messages.writePlaceholder")} maxLength={2000} required />
+          <button className="button button-small" disabled={sending}>{sending ? t("messages.sending") : t("messages.send")}</button>
         </form>
       )}
     </div>
@@ -420,6 +476,7 @@ function MessageThreadPanel({ productId, heading, thread, viewerRole, onBack }) 
 }
 
 function LoginView({ onLogin, onNavigate }) {
+  const t = useT();
   const [form, setForm] = useState({ email: "", password: "" });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -430,20 +487,21 @@ function LoginView({ onLogin, onNavigate }) {
   };
   return (
     <div className="page auth-page">
-      <div className="auth-panel"><p className="eyebrow orange">ACCOUNT ACCESS</p><h1>Welcome back.</h1><p className="auth-subcopy">Sign in to manage your listings, messages or marketplace operations.</p>
+      <div className="auth-panel"><p className="eyebrow orange">{t("auth.eyebrow")}</p><h1>{t("auth.welcome")}</h1><p className="auth-subcopy">{t("auth.subcopy")}</p>
         <form onSubmit={submit} className="stack-form">
-          <Field label="Email" type="email" value={form.email} onChange={(value) => setForm({ ...form, email: value })} placeholder="you@example.com" />
-          <Field label="Password" type="password" value={form.password} onChange={(value) => setForm({ ...form, password: value })} placeholder="••••••••" />
+          <Field label={t("auth.email")} type="email" value={form.email} onChange={(value) => setForm({ ...form, email: value })} placeholder={t("ph.email")} />
+          <Field label={t("auth.password")} type="password" value={form.password} onChange={(value) => setForm({ ...form, password: value })} placeholder={t("ph.passwordMask")} />
           {error && <InlineError message={error} />}
-          <button className="button full" disabled={loading}>{loading ? "Signing in…" : "Sign in"}</button>
+          <button className="button full" disabled={loading}>{loading ? t("auth.signingIn") : t("nav.signIn")}</button>
         </form>
-        <p className="auth-switch">New to Bazaario? <button onClick={() => onNavigate("/register")}>Create an account</button></p>
+        <p className="auth-switch">{t("auth.newHere")} <button onClick={() => onNavigate("/register")}>{t("auth.createAccount")}</button></p>
       </div>
     </div>
   );
 }
 
 function RegisterView({ onNavigate, onFlash }) {
+  const t = useT();
   const [role, setRole] = useState("customer");
   const [form, setForm] = useState({ display_name: "", email: "", password: "", shop_name: "", region: "", phone: "" });
   const [error, setError] = useState("");
@@ -454,28 +512,31 @@ function RegisterView({ onNavigate, onFlash }) {
     try {
       if (role === "customer") await api.registerCustomer({ display_name: form.display_name, email: form.email, password: form.password });
       else await api.registerShop({ display_name: form.display_name, email: form.email, password: form.password, shop_name: form.shop_name, region: form.region, phone: form.phone || undefined });
-      setDone(true); onFlash("Application received");
+      setDone(true); onFlash(t("reg.receivedEyebrow"));
     } catch (err) { setError(err.message); }
   };
-  if (done) return <div className="page auth-page"><div className="auth-panel success-panel"><p className="eyebrow green">APPLICATION RECEIVED</p><h1>{role === "shop" ? "Under review." : "Account ready."}</h1><p>{role === "shop" ? "An admin will review your shop profile. Publishing unlocks after approval." : "Your customer account is ready to use."}</p><button className="button full" onClick={() => onNavigate("/login")}>Continue to sign in</button></div></div>;
+  if (done) return <div className="page auth-page"><div className="auth-panel success-panel"><p className="eyebrow green">{t("reg.receivedEyebrow")}</p><h1>{role === "shop" ? t("reg.underReview") : t("reg.accountReady")}</h1><p>{role === "shop" ? t("reg.reviewNote") : t("reg.customerReadyNote")}</p><button className="button full" onClick={() => onNavigate("/login")}>{t("reg.continueSignIn")}</button></div></div>;
   return (
-    <div className="page auth-page"><div className="auth-panel wide"><p className="eyebrow orange">CREATE ACCOUNT</p><h1>Choose your path.</h1><div className="role-choice"><button className={role === "customer" ? "active" : ""} onClick={() => setRole("customer")}><b>Customer</b><span>Contact shops and leave reviews.</span></button><button className={role === "shop" ? "active" : ""} onClick={() => setRole("shop")}><b>Shop</b><span>Sell after verification.</span></button></div>
-      <form onSubmit={submit} className="stack-form"><Field label="Full name" value={form.display_name} onChange={(value) => update("display_name", value)} placeholder="Your name" /><Field label="Email" type="email" value={form.email} onChange={(value) => update("email", value)} placeholder="you@example.com" /><Field label="Password" type="password" value={form.password} onChange={(value) => update("password", value)} placeholder="At least 8 characters" />
-        {role === "shop" && <div className="shop-fields"><Field label="Shop name" value={form.shop_name} onChange={(value) => update("shop_name", value)} placeholder="Your shop or stall" /><Field label="Region" value={form.region} onChange={(value) => update("region", value)} placeholder="e.g. Lankaran" /></div>}
-        {error && <InlineError message={error} />}<button className="button full">Submit {role} registration</button>
-      </form><p className="auth-switch">Already registered? <button onClick={() => onNavigate("/login")}>Sign in</button></p>
+    <div className="page auth-page"><div className="auth-panel wide"><p className="eyebrow orange">{t("reg.eyebrow")}</p><h1>{t("reg.chooseTitle")}</h1><div className="role-choice"><button className={role === "customer" ? "active" : ""} onClick={() => setRole("customer")}><b>{t("reg.customerTag")}</b><span>{t("reg.customerDesc")}</span></button><button className={role === "shop" ? "active" : ""} onClick={() => setRole("shop")}><b>{t("reg.shopTag")}</b><span>{t("reg.shopDesc")}</span></button></div>
+      <form onSubmit={submit} className="stack-form"><Field label={t("reg.fullName")} value={form.display_name} onChange={(value) => update("display_name", value)} placeholder={t("ph.yourName")} /><Field label={t("auth.email")} type="email" value={form.email} onChange={(value) => update("email", value)} placeholder={t("ph.email")} /><Field label={t("auth.password")} type="password" value={form.password} onChange={(value) => update("password", value)} placeholder={t("ph.passwordHint")} />
+        {role === "shop" && <div className="shop-fields"><Field label={t("reg.shopName")} value={form.shop_name} onChange={(value) => update("shop_name", value)} placeholder={t("ph.shopOrStall")} /><Field label={t("reg.region")} value={form.region} onChange={(value) => update("region", value)} placeholder={t("ph.regionExample")} /></div>}
+        {error && <InlineError message={error} />}<button className="button full">{role === "shop" ? t("reg.submitShop") : t("reg.submitCustomer")}</button>
+      </form><p className="auth-switch">{t("reg.alreadyRegistered")} <button onClick={() => onNavigate("/login")}>{t("nav.signIn")}</button></p>
     </div></div>
   );
 }
 
 function DashboardRouter({ session, onNavigate, onFlash }) {
+  const t = useT();
   if (session.user.role === "customer") return <CustomerDashboard onNavigate={onNavigate} onFlash={onFlash} />;
   if (session.user.role === "shop") return <ShopDashboard onFlash={onFlash} />;
   if (session.user.role === "admin") return <AdminDashboard onFlash={onFlash} />;
-  return <div className="page empty-state"><InlineError message="This session has an unknown role. Please sign in again." /><button className="button" onClick={() => { clearSession(); window.location.reload(); }}>Return to sign in</button></div>;
+  return <div className="page empty-state"><InlineError message={t("misc.unknownRole")} /><button className="button" onClick={() => { clearSession(); window.location.reload(); }}>{t("misc.returnToSignIn")}</button></div>;
 }
 
 function CustomerDashboard({ onNavigate }) {
+  const t = useT();
+  const pluralS = (n) => (n === 1 ? "" : "s");
   const [dashboard, setDashboard] = useState(null);
   const [threads, setThreads] = useState([]);
   const [activeThread, setActiveThread] = useState(null);
@@ -483,15 +544,17 @@ function CustomerDashboard({ onNavigate }) {
   const refresh = () => Promise.all([api.customerDashboard(), api.customerThreads().catch(() => ({ threads: [] }))]).then(([dash, messageData]) => { setDashboard(dash); setThreads(messageData.threads || []); }).catch((err) => setError(err.message));
   useEffect(() => { refresh(); }, []);
   if (error) return <div className="page"><InlineError message={error} /></div>;
-  if (!dashboard) return <div className="page empty-state">Loading dashboard…</div>;
-  return <div className="page dashboard-page"><SectionHeading eyebrow="CUSTOMER / DASHBOARD" title={`Good to see you, ${dashboard.user.display_name.split(" ")[0]}.`} detail="Buy by contacting shops directly." />
-    <div className="metric-grid"><Metric label="Conversations" value={dashboard.message_thread_count} accent="green" /><Metric label="Catalog" value={dashboard.catalog_count} /></div>
-    <div className="dashboard-columns"><aside className="side-note"><p className="eyebrow">HOW BUYING WORKS</p><h3>Agreement based.</h3><p>Pick a listing, call or message the shop, and settle price, quantity and handover with them. Reviews are per product.</p><button className="button outline" onClick={() => onNavigate("/")}>Open catalog</button></aside></div>
-    <section className="dashboard-section messages-section"><div className="section-title-row"><h2>Messages with sellers</h2><span className="muted">{threads.length ? `${threads.length} conversation${threads.length > 1 ? "s" : ""}` : "Direct with each shop"}</span></div>{threads.length === 0 && !activeThread ? <p className="muted">No conversations yet. Open any product and use "Write a message" to reach a shop directly. There are no delivery hubs, everything is arranged with the seller.</p> : activeThread ? <MessageThreadPanel productId={activeThread.product_id} heading={`${activeThread.product_name || "Product"} · ${activeThread.shop_name || "shop"}`} thread={activeThread} onBack={() => setActiveThread(null)} /> : <div className="thread-list">{threads.map((thread) => <button className="thread-row" key={`${thread.product_id}-${thread.customer_id}`} onClick={() => setActiveThread(thread)}><div><b>{thread.product_name}</b><span>{thread.shop_name} · {thread.message_count} message{thread.message_count > 1 ? "s" : ""}</span><small>{thread.last_body}</small></div><em>{new Date(thread.last_created_at).toLocaleDateString()}</em></button>)}</div>}</section>
+  if (!dashboard) return <div className="page empty-state">{t("load.customer")}</div>;
+  return <div className="page dashboard-page"><SectionHeading eyebrow={t("cust.eyebrow")} title={t("cust.greeting", { name: dashboard.user.display_name.split(" ")[0] })} detail={t("cust.detail")} />
+    <div className="metric-grid"><Metric label={t("metric.conversations")} value={dashboard.message_thread_count} accent="green" /><Metric label={t("metric.catalog")} value={dashboard.catalog_count} /></div>
+    <div className="dashboard-columns"><aside className="side-note"><p className="eyebrow">{t("how.eyebrow")}</p><h3>{t("how.title")}</h3><p>{t("how.body")}</p><button className="button outline" onClick={() => onNavigate("/")}>{t("how.openCatalog")}</button></aside></div>
+    <section className="dashboard-section messages-section"><div className="section-title-row"><h2>{t("threads.title")}</h2><span className="muted">{threads.length ? t("threads.count", { n: threads.length, s: pluralS(threads.length) }) : t("threads.directWithShops")}</span></div>{threads.length === 0 && !activeThread ? <p className="muted">{t("threads.customerEmpty")}</p> : activeThread ? <MessageThreadPanel productId={activeThread.product_id} heading={`${activeThread.product_name || t("misc.productFallback")} · ${activeThread.shop_name || t("misc.shopFallback")}`} thread={activeThread} onBack={() => setActiveThread(null)} /> : <div className="thread-list">{threads.map((thread) => <button className="thread-row" key={`${thread.product_id}-${thread.customer_id}`} onClick={() => setActiveThread(thread)}><div><b>{thread.product_name}</b><span>{thread.shop_name} · {t("misc.messageCount", { n: thread.message_count, s: thread.message_count > 1 ? "s" : "" })}</span><small>{thread.last_body}</small></div><em>{new Date(thread.last_created_at).toLocaleDateString()}</em></button>)}</div>}</section>
   </div>;
 }
 
 function ShopDashboard({ onFlash }) {
+  const t = useT();
+  const pluralS = (n) => (n === 1 ? "" : "s");
   const [dashboard, setDashboard] = useState(null);
   const [meta, setMeta] = useState({ categories: CATEGORIES, seasons: SEASONS });
   const [threads, setThreads] = useState([]);
@@ -517,10 +580,10 @@ function ShopDashboard({ onFlash }) {
     try {
       if (editingId) {
         await api.shopListingUpdate(editingId, form);
-        onFlash("Listing updated");
+        onFlash(t("flash.listingUpdated"));
       } else {
         await api.shopListing(form);
-        onFlash("Listing published");
+        onFlash(t("flash.listingPublished"));
       }
       setEditingId(null);
       setForm(blankForm);
@@ -541,22 +604,23 @@ function ShopDashboard({ onFlash }) {
   };
   const savePhone = async () => {
     setError("");
-    try { await api.updatePhone({ phone: phoneDraft }); onFlash("Contact number updated"); await refresh(); }
+    try { await api.updatePhone({ phone: phoneDraft }); onFlash(t("flash.contactUpdated")); await refresh(); }
     catch (err) { setError(err.message); }
   };
   if (error && !dashboard) return <div className="page"><InlineError message={error} /></div>;
-  if (!dashboard) return <div className="page empty-state">Loading shop dashboard…</div>;
+  if (!dashboard) return <div className="page empty-state">{t("load.shop")}</div>;
   const pending = dashboard.verification_status !== "approved";
-  return <div className="page dashboard-page"><SectionHeading eyebrow="SHOP / DASHBOARD" title={dashboard.user.shop_profile?.shop_name || dashboard.user.display_name} detail={dashboard.user.shop_profile?.region || "Azerbaijan"} />
-    {pending && <div className="verification-banner"><div><span className="status-pip orange-pip" /><strong>Verification {dashboard.verification_status.replaceAll("_", " ")}</strong></div><span>Your shop profile is being reviewed. Listing publication unlocks after approval.</span></div>}
-    <section className="dashboard-section contact-section"><div className="section-title-row"><h2>Contact number</h2><span className="muted">Shown on your listings for direct calls</span></div><div className="phone-row"><input value={phoneDraft} onChange={(event) => setPhoneDraft(event.target.value)} placeholder="+994 22 216 01 45" /><button className="button button-small" onClick={savePhone}>Save number</button></div><small className="muted">There are no delivery hubs yet, so buyers arrange handover by calling or messaging you.</small></section>
+  return <div className="page dashboard-page"><SectionHeading eyebrow={t("shop.eyebrow")} title={dashboard.user.shop_profile?.shop_name || dashboard.user.display_name} detail={dashboard.user.shop_profile?.region || "Azerbaijan"} />
+    {pending && <div className="verification-banner"><div><span className="status-pip orange-pip" /><strong>{t("shop.verification", { status: dashboard.verification_status.replaceAll("_", " ") })}</strong></div><span>{t("shop.bannerNote")}</span></div>}
+    <section className="dashboard-section contact-section"><div className="section-title-row"><h2>{t("contact.number")}</h2><span className="muted">{t("contact.shownNote")}</span></div><div className="phone-row"><input value={phoneDraft} onChange={(event) => setPhoneDraft(event.target.value)} placeholder="+994 22 216 01 45" /><button className="button button-small" onClick={savePhone}>{t("contact.save")}</button></div><small className="muted">{t("contact.hubsNote")}</small></section>
     <div className="metric-grid"><Metric label="Listings" value={dashboard.listing_count} /></div>
-    <div className="dashboard-columns shop-columns"><section className="dashboard-section"><div className="section-title-row"><h2>Your listings</h2><span className="muted">{pending ? "Publishing locked" : "Manage your catalog"}</span></div>{error && <InlineError message={error} />}{!pending && <form className="listing-form" onSubmit={saveListing}><Field label="Product name" value={form.name} onChange={(value) => setForm({ ...form, name: value })} placeholder="e.g. Orchard apples" /><label><span>Category</span><select value={form.category} onChange={(event) => setForm({ ...form, category: event.target.value })}>{(meta.categories || CATEGORIES).map((category) => <option key={category}>{category}</option>)}</select></label><div className="form-row"><Field label="Price / AZN" type="number" min="0" step="0.01" value={form.price_azn} onChange={(value) => setForm({ ...form, price_azn: value })} placeholder="4.50" /><Field label="Stock" type="number" min="0" step="1" value={form.stock} onChange={(value) => setForm({ ...form, stock: value })} placeholder="20" /></div><Field label="Season window" value={form.season} onChange={(value) => setForm({ ...form, season: value })} placeholder="August–October" /><Field label="Real image URL" type="url" value={form.image_url} onChange={(value) => setForm({ ...form, image_url: value })} placeholder="https://..." /><Field label="Description" value={form.description} onChange={(value) => setForm({ ...form, description: value })} placeholder="How this crop is grown" /><button className="button">{editingId ? "Save listing" : "Publish listing"}</button>{editingId && <button type="button" className="text-button" onClick={() => { setEditingId(null); setForm(blankForm); }}>Cancel edit</button>}</form>}{dashboard.listings.length ? <div className="listing-list">{dashboard.listings.map((listing) => <div className="listing-row" key={listing.id}><img src={listing.image_url} alt="" /><div><b>{listing.name}</b><span>{listing.category} · {listing.stock} in stock</span></div><strong>{money(listing.price_azn)}</strong><button className="text-button" onClick={() => editListing(listing)}>Edit</button><button className="text-button danger-text" onClick={async () => { try { await api.shopListingDelete(listing.id); onFlash("Listing archived"); await refresh(); } catch (err) { setError(err.message); } }}>Archive</button></div>)}</div> : <div className="empty-state compact">No listings yet.</div>}</section></div>
-    <section className="dashboard-section messages-section"><div className="section-title-row"><h2>Buyer messages</h2><span className="muted">{threads.length ? `${threads.length} conversation${threads.length > 1 ? "s" : ""}` : "Reply from your listings"}</span></div>{threads.length === 0 && !activeThread ? <p className="muted">No buyer questions yet. Buyers reach out from your product pages.</p> : activeThread ? <MessageThreadPanel productId={activeThread.product_id} heading={`${activeThread.product_name || "Product"} · ${activeThread.customer_name || "buyer"}`} thread={activeThread} onBack={() => setActiveThread(null)} /> : <div className="thread-list">{threads.map((thread) => <button className="thread-row" key={`${thread.product_id}-${thread.customer_id}`} onClick={() => setActiveThread(thread)}><div><b>{thread.product_name}</b><span>{thread.customer_name} · {thread.message_count} message{thread.message_count > 1 ? "s" : ""}</span><small>{thread.last_body}</small></div><em>{new Date(thread.last_created_at).toLocaleDateString()}</em></button>)}</div>}</section>
+    <div className="dashboard-columns shop-columns"><section className="dashboard-section"><div className="section-title-row"><h2>{t("listings.yours")}</h2><span className="muted">{pending ? t("listings.locked") : t("listings.manage")}</span></div>{error && <InlineError message={error} />}{!pending && <form className="listing-form" onSubmit={saveListing}><Field label={t("form.name")} value={form.name} onChange={(value) => setForm({ ...form, name: value })} placeholder={t("form.namePlaceholder")} /><label><span>{t("filter.category")}</span><select value={form.category} onChange={(event) => setForm({ ...form, category: event.target.value })}>{(meta.categories || CATEGORIES).map((category) => <option key={category}>{category}</option>)}</select></label><div className="form-row"><Field label={t("form.price")} type="number" min="0" step="0.01" value={form.price_azn} onChange={(value) => setForm({ ...form, price_azn: value })} placeholder={t("form.pricePlaceholder")} /><Field label={t("form.stock")} type="number" min="0" step="1" value={form.stock} onChange={(value) => setForm({ ...form, stock: value })} placeholder={t("form.stockPlaceholder")} /></div><Field label={t("form.seasonWindow")} value={form.season} onChange={(value) => setForm({ ...form, season: value })} placeholder={t("form.seasonPlaceholder")} /><Field label={t("form.imageUrl")} type="url" value={form.image_url} onChange={(value) => setForm({ ...form, image_url: value })} placeholder={t("form.imagePlaceholder")} /><Field label={t("form.description")} value={form.description} onChange={(value) => setForm({ ...form, description: value })} placeholder={t("form.descriptionPlaceholder")} /><button className="button">{editingId ? t("listings.save") : t("listings.publish")}</button>{editingId && <button type="button" className="text-button" onClick={() => { setEditingId(null); setForm(blankForm); }}>{t("listings.cancelEdit")}</button>}</form>}{dashboard.listings.length ? <div className="listing-list">{dashboard.listings.map((listing) => <div className="listing-row" key={listing.id}><img src={listing.image_url} alt="" /><div><b>{listing.name}</b><span>{listing.category} · {listing.stock} in stock</span></div><strong>{money(listing.price_azn)}</strong><button className="text-button" onClick={() => editListing(listing)}>{t("listings.edit")}</button><button className="text-button danger-text" onClick={async () => { try { await api.shopListingDelete(listing.id); onFlash(t("flash.listingArchived")); await refresh(); } catch (err) { setError(err.message); } }}>{t("listings.archive")}</button></div>)}</div> : <div className="empty-state compact">{t("listings.none")}</div>}</section></div>
+    <section className="dashboard-section messages-section"><div className="section-title-row"><h2>{t("buyers.title")}</h2><span className="muted">{threads.length ? t("threads.count", { n: threads.length, s: pluralS(threads.length) }) : t("buyers.replyNote")}</span></div>{threads.length === 0 && !activeThread ? <p className="muted">{t("buyers.empty")}</p> : activeThread ? <MessageThreadPanel productId={activeThread.product_id} heading={`${activeThread.product_name || t("misc.productFallback")} · ${activeThread.customer_name || t("misc.buyer")}`} thread={activeThread} onBack={() => setActiveThread(null)} /> : <div className="thread-list">{threads.map((thread) => <button className="thread-row" key={`${thread.product_id}-${thread.customer_id}`} onClick={() => setActiveThread(thread)}><div><b>{thread.product_name}</b><span>{thread.customer_name} · {t("misc.messageCount", { n: thread.message_count, s: thread.message_count > 1 ? "s" : "" })}</span><small>{thread.last_body}</small></div><em>{new Date(thread.last_created_at).toLocaleDateString()}</em></button>)}</div>}</section>
   </div>;
 }
 
 function AdminDashboard({ onFlash }) {
+  const t = useT();
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
   const [newCategory, setNewCategory] = useState(CATEGORIES[0]);
@@ -579,28 +643,28 @@ function AdminDashboard({ onFlash }) {
     try { await fn(id); onFlash(message); await refresh(); } catch (err) { setError(err.message); }
   };
   const activateCategory = async (name) => {
-    try { await api.createCategory({ name }); onFlash("Category activated"); await refresh(); }
+    try { await api.createCategory({ name }); onFlash(t("flash.categoryActivated")); await refresh(); }
     catch (err) { setError(err.message); }
   };
   const createCategory = () => activateCategory(newCategory);
   const createRegion = async (event) => {
     event.preventDefault();
-    try { await api.createRegion({ name: newRegion }); setNewRegion(""); onFlash("Region added"); await refresh(); }
+    try { await api.createRegion({ name: newRegion }); setNewRegion(""); onFlash(t("flash.regionAdded")); await refresh(); }
     catch (err) { setError(err.message); }
   };
   const activateRegion = async (name) => {
-    try { await api.createRegion({ name }); onFlash("Region activated"); await refresh(); }
+    try { await api.createRegion({ name }); onFlash(t("flash.regionActivated")); await refresh(); }
     catch (err) { setError(err.message); }
   };
   if (error && !data) return <div className="page"><InlineError message={error} /></div>;
-  if (!data) return <div className="page empty-state">Loading admin console…</div>;
+  if (!data) return <div className="page empty-state">{t("load.admin")}</div>;
   const { dashboard } = data;
-  return <div className="page dashboard-page"><SectionHeading eyebrow="ADMIN / OPERATIONS" title="Marketplace control." detail="Verification and account health." />
+  return <div className="page dashboard-page"><SectionHeading eyebrow={t("admin.eyebrow")} title={t("admin.title")} detail={t("admin.detail")} />
     {error && <InlineError message={error} />}
-    <div className="metric-grid"><Metric label="Pending shops" value={dashboard.pending_shop_count} accent="orange" /><Metric label="Listings" value={dashboard.listing_count} /><Metric label="Users" value={dashboard.user_count} /></div>
-    <div className="admin-grid"><section className="dashboard-section"><div className="section-title-row"><h2>Verification queue</h2><span className="muted">{data.shops.length} waiting</span></div>{data.shops.length ? data.shops.map((shopEntry) => <div className="queue-row" key={shopEntry.user.id}><div><b>{shopEntry.profile.shop_name}</b><span>{shopEntry.user.email} · {shopEntry.profile.region}</span></div><div className="row-actions"><button className="button button-small" onClick={() => act(api.approveShop, shopEntry.user.id, "Shop approved")}>Approve</button><button className="text-button danger-text" onClick={() => act(api.suspendShop, shopEntry.user.id, "Shop suspended")}>Suspend</button></div></div>) : <div className="empty-state compact">No pending applications.</div>}</section>
-      <section className="dashboard-section"><div className="section-title-row"><h2>User management</h2><span className="muted">Suspend / restore</span></div>{data.users.map((user) => <div className="user-row" key={user.id}><div><b>{user.display_name}</b><span>{user.email} · {user.role}</span></div>{user.role !== "admin" && <button className="text-button" onClick={() => act(user.account_status === "suspended" ? (user.role === "shop" ? api.restoreShop : api.restoreUser) : api.suspendUser, user.id, user.account_status === "suspended" ? "User restored" : "User suspended")}>{user.account_status === "suspended" ? "Restore" : "Suspend"}</button>}</div>)}</section>
-      <section className="dashboard-section taxonomy-section"><div className="section-title-row"><h2>Catalog controls</h2><span className="muted">Categories / regions</span></div><div className="taxonomy-grid"><div><h3>Categories</h3><div className="taxonomy-list">{data.categories.map((category) => <div className="taxonomy-item" key={category.id}><span className={category.active ? "" : "inactive-label"}>{category.name}</span><button className="text-button" onClick={() => category.active ? act(api.archiveCategory, category.id, "Category archived") : activateCategory(category.name)}>{category.active ? "Archive" : "Activate"}</button></div>)}</div><label className="taxonomy-form"><span>Activate allowed category</span><select value={newCategory} onChange={(event) => setNewCategory(event.target.value)}>{CATEGORIES.map((category) => <option key={category}>{category}</option>)}</select><button className="button button-small" onClick={createCategory}>Activate</button></label></div><div><h3>Regions</h3><div className="taxonomy-list">{data.regions.map((region) => <div className="taxonomy-item" key={region.id}><span className={region.active ? "" : "inactive-label"}>{region.name}</span><button className="text-button" onClick={() => region.active ? act(api.archiveRegion, region.id, "Region archived") : activateRegion(region.name)}>{region.active ? "Archive" : "Activate"}</button></div>)}</div><form className="taxonomy-form" onSubmit={createRegion}><span>Add region</span><input value={newRegion} onChange={(event) => setNewRegion(event.target.value)} placeholder="e.g. Nakhchivan" required /><button className="button button-small">Add region</button></form></div></div></section>
+    <div className="metric-grid"><Metric label={t("admin.pendingShops")} value={dashboard.pending_shop_count} accent="orange" /><Metric label={t("metric.catalog")} value={dashboard.listing_count} /><Metric label={t("admin.users")} value={dashboard.user_count} /></div>
+    <div className="admin-grid"><section className="dashboard-section"><div className="section-title-row"><h2>{t("admin.queue")}</h2><span className="muted">{t("admin.waiting", { n: data.shops.length })}</span></div>{data.shops.length ? data.shops.map((shopEntry) => <div className="queue-row" key={shopEntry.user.id}><div><b>{shopEntry.profile.shop_name}</b><span>{shopEntry.user.email} · {shopEntry.profile.region}</span></div><div className="row-actions"><button className="button button-small" onClick={() => act(api.approveShop, shopEntry.user.id, t("flash.shopApproved"))}>{t("admin.approve")}</button><button className="text-button danger-text" onClick={() => act(api.suspendShop, shopEntry.user.id, t("flash.shopSuspended"))}>{t("admin.suspend")}</button></div></div>) : <div className="empty-state compact">{t("admin.noPending")}</div>}</section>
+      <section className="dashboard-section"><div className="section-title-row"><h2>{t("admin.userMgmt")}</h2><span className="muted">{t("admin.suspendRestore")}</span></div>{data.users.map((user) => <div className="user-row" key={user.id}><div><b>{user.display_name}</b><span>{user.email} · {user.role}</span></div>{user.role !== "admin" && <button className="text-button" onClick={() => act(user.account_status === "suspended" ? (user.role === "shop" ? api.restoreShop : api.restoreUser) : api.suspendUser, user.id, user.account_status === "suspended" ? t("flash.userRestored") : t("flash.userSuspended"))}>{user.account_status === "suspended" ? t("admin.restore") : t("admin.suspend")}</button>}</div>)}</section>
+      <section className="dashboard-section taxonomy-section"><div className="section-title-row"><h2>{t("admin.controls")}</h2><span className="muted">{t("admin.taxonomyNote")}</span></div><div className="taxonomy-grid"><div><h3>{t("admin.categoriesHeading")}</h3><div className="taxonomy-list">{data.categories.map((category) => <div className="taxonomy-item" key={category.id}><span className={category.active ? "" : "inactive-label"}>{category.name}</span><button className="text-button" onClick={() => category.active ? act(api.archiveCategory, category.id, t("flash.categoryArchived")) : activateCategory(category.name)}>{category.active ? t("admin.archive") : t("admin.activate")}</button></div>)}</div><label className="taxonomy-form"><span>{t("admin.activateAllowed")}</span><select value={newCategory} onChange={(event) => setNewCategory(event.target.value)}>{CATEGORIES.map((category) => <option key={category}>{category}</option>)}</select><button className="button button-small" onClick={createCategory}>{t("admin.activate")}</button></label></div><div><h3>{t("admin.regionsHeading")}</h3><div className="taxonomy-list">{data.regions.map((region) => <div className="taxonomy-item" key={region.id}><span className={region.active ? "" : "inactive-label"}>{region.name}</span><button className="text-button" onClick={() => region.active ? act(api.archiveRegion, region.id, t("flash.regionArchived")) : activateRegion(region.name)}>{region.active ? t("admin.archive") : t("admin.activate")}</button></div>)}</div><form className="taxonomy-form" onSubmit={createRegion}><span>{t("admin.addRegion")}</span><input value={newRegion} onChange={(event) => setNewRegion(event.target.value)} placeholder={t("admin.regionPlaceholder")} required /><button className="button button-small">{t("admin.addRegion")}</button></form></div></div></section>
     </div>
   </div>;
 }

@@ -404,3 +404,32 @@ input:focus, select:focus { border-color: var(--ink); }
 @media (max-width: 800px) {
   .seller-contact-section { grid-template-columns: 1fr; }
 }
+
+
+/* ---- Language switcher ---- */
+.lang-switcher {
+  display: inline-flex;
+  border: 1px solid rgba(20, 40, 30, 0.25);
+  border-radius: 999px;
+  overflow: hidden;
+  margin-right: 10px;
+}
+
+.lang-switcher button {
+  padding: 4px 10px;
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: #111;
+}
+
+.lang-switcher button + button {
+  border-left: 1px solid rgba(20, 40, 30, 0.2);
+}
+
+.lang-switcher button.active {
+  background: #111;
+  color: #fff;
+}
