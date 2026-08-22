@@ -433,3 +433,18 @@ input:focus, select:focus { border-color: var(--ink); }
   background: #111;
   color: #fff;
 }
+
+
+/* ---- On-demand content translation ---- */
+.detail-title-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.translate-toggle {
+  flex-shrink: 0;
+  font-size: 0.78rem;
+  text-decoration: underline;
+}

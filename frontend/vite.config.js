@@ -11,6 +11,13 @@ export default defineConfig({
         target: `http://127.0.0.1:${API_PORT}`,
         changeOrigin: true,
       },
+      // Same-origin path to the public Google Translate endpoint so browser
+      // CORS rules never block on-demand content translation.
+      "/mt": {
+        target: "https://translate.googleapis.com",
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/mt/, ""),
+      },
     },
   },
 });

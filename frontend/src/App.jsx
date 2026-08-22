@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { api, clearSession, getSession, saveSession } from "./api";
 import { LANGS, LangProvider, getInitialLang, storeLang, useT, useLang, useSetLang, translate } from "./i18n";
+import { translateMany } from "./mt";
 
 const CATEGORIES = [
   "Fruit",
@@ -209,6 +210,7 @@ function SectionHeading({ eyebrow, title, detail }) {
 
 function CatalogView({ onNavigate }) {
   const t = useT();
+  const lang = useLang();
   const [products, setProducts] = useState([]);
   const [meta, setMeta] = useState({ categories: CATEGORIES, regions: [], seasons: SEASONS });
   const [filters, setFilters] = useState({ q: "", category: "", region: "", season: "" });
@@ -261,21 +263,21 @@ function CatalogView({ onNavigate }) {
           <span>{t("filter.category")}</span>
           <select value={filters.category} onChange={(event) => setFilters({ ...filters, category: event.target.value })}>
             <option value="">{t("filter.allCategories")}</option>
-            {meta.categories.map((category) => <option key={category}>{category}</option>)}
+            {meta.categories.map((category) => <option key={category}>{t(`cat.${category}`, {}, category)}</option>)}
           </select>
         </label>
         <label>
           <span>{t("filter.region")}</span>
           <select value={filters.region} onChange={(event) => setFilters({ ...filters, region: event.target.value })}>
             <option value="">{t("filter.everyRegion")}</option>
-            {meta.regions.map((region) => <option key={region}>{region}</option>)}
+            {meta.regions.map((region) => <option key={region}>{t(`region.${region}`, {}, region)}</option>)}
           </select>
         </label>
         <label>
           <span>{t("filter.season")}</span>
           <select value={filters.season} onChange={(event) => setFilters({ ...filters, season: event.target.value })}>
             <option value="">{t("filter.anySeason")}</option>
-            {meta.seasons.map((season) => <option key={season}>{season}</option>)}
+            {meta.seasons.map((season) => <option key={season}>{t(`season.${season}`, {}, season)}</option>)}
           </select>
         </label>
       </section>
@@ -290,7 +292,7 @@ function CatalogView({ onNavigate }) {
       ) : products.length ? (
         <div className="product-grid">
           {products.map((product) => (
-            <ProductCard key={product.id} product={product} onOpen={() => onNavigate(`/product/${product.id}`)} />
+            <ProductCard key={product.id} product={product} originalNames={cardNames} onOpen={() => onNavigate(`/product/${product.id}`)} />
           ))}
         </div>
       ) : (
@@ -300,20 +302,25 @@ function CatalogView({ onNavigate }) {
   );
 }
 
-function ProductCard({ product, onOpen }) {
+function ProductCard({ product, originalNames, onOpen }) {
   const t = useT();
+  const lang = useLang();
+  const shownName = originalNames?.[product.name] || product.name;
+  const shownCategory = product.category && !product.category.startsWith("cat\u002e")
+    ? product.category
+    : product.category;
   return (
     <article className="product-card">
-      <button className="product-image-button" onClick={onOpen} aria-label={`View ${product.name}`}>
-        <img src={product.image_url} alt={product.name} loading="lazy" />
-        <span className="image-label">{product.category}</span>
+      <button className="product-image-button" onClick={onOpen} aria-label={`View ${shownName}`}>
+        <img src={product.image_url} alt={shownName} loading="lazy" />
+        <span className="image-label">{t(`cat.${product.category}`, {}, product.category)}</span>
       </button>
       <div className="product-card-body">
         <div className="product-card-topline">
-          <span>{product.region}</span>
-          <span>{product.season}</span>
+          <span>{t(`region.${product.region}`, {}, product.region)}</span>
+          <span>{t(`season.${product.season}`, {}, product.season)}</span>
         </div>
-        <button className="product-name" onClick={onOpen}>{product.name}</button>
+        <button className="product-name" onClick={onOpen}>{shownName}</button>
         <div className="product-shop">{product.shop?.name}</div>
         <div className="product-card-bottom">
           <strong>{money(product.price_azn)}</strong>
@@ -324,27 +331,80 @@ function ProductCard({ product, onOpen }) {
   );
 }
 
+function useTranslatedContent(lang) {
+  const [state, setState] = useState({ lang: null, names: {}, descriptions: {}, reviews: {}, working: false });
+  const run = async (payload) => {
+    setState((current) => ({ ...current, lang, working: true }));
+    try {
+      const texts = [
+        ...payload.names,
+        ...payload.descriptions,
+        ...payload.reviews,
+      ].filter(Boolean);
+      const map = await translateMany(texts, lang);
+      setState({
+        lang,
+        working: false,
+        names: Object.fromEntries(payload.names.filter(Boolean).map((name) => [name, map[name] || name])),
+        descriptions: Object.fromEntries(payload.descriptions.filter(Boolean).map((body) => [body, map[body] || body])),
+        reviews: Object.fromEntries(payload.reviews.filter(Boolean).map((body) => [body, map[body] || body])),
+      });
+    } catch {
+      setState({ lang, working: false, names: {}, descriptions: {}, reviews: {} });
+    }
+  };
+  return [state, run];
+}
+
+function TranslateToggle({ translated, working, onTranslate, onShowOriginal }) {
+  const t = useT();
+  return (
+    <button className="text-button translate-toggle" onClick={translated ? onShowOriginal : onTranslate} disabled={working}>
+      {working ? t("translate.working") : translated ? t("translate.original") : t("translate.show")}
+    </button>
+  );
+}
+
 function ProductDetail({ id, onNavigate, onFlash }) {
   const t = useT();
+  const lang = useLang();
   const [product, setProduct] = useState(null);
   const [error, setError] = useState("");
+  const [content, translateContent] = useTranslatedContent(lang);
   const load = () => api.product(id).then((data) => setProduct(data.product)).catch((err) => setError(err.message));
   useEffect(() => { load(); }, [id]);
   if (error) return <div className="page"><InlineError message={error} /></div>;
   if (!product) return <div className="page empty-state">{t("product.loading")}</div>;
+  const translated = content.lang === lang && Boolean(content.names[product.name]);
+  const shownName = translated ? content.names[product.name] : product.name;
+  const shownDescription = translated
+    ? content.descriptions[product.description] || product.description
+    : product.description;
   return (
     <div className="page product-detail-page">
       <button className="back-link" onClick={() => onNavigate("/")}>{t("product.back")}</button>
       <section className="product-detail">
-        <div className="detail-image-wrap"><img src={product.image_url} alt={product.name} /></div>
+        <div className="detail-image-wrap"><img src={product.image_url} alt={shownName} /></div>
         <div className="detail-copy">
-          <p className="eyebrow orange">{product.category} / {product.region}</p>
-          <h1>{product.name}</h1>
-          <p className="detail-description">{product.description}</p>
-          <div className="detail-shop"><span>{t("product.soldBy")}</span><strong>{product.shop?.name}</strong><small>{product.shop?.region}, Azerbaijan</small></div>
-          <div className="detail-season"><span>{t("product.season")}</span><strong>{product.season}</strong><span className="stock-note">{t("product.inStock", { n: product.stock })}</span></div>
+          <p className="eyebrow orange">{t(`cat.${product.category}`, {}, product.category)} / {t(`region.${product.region}`, {}, product.region)}</p>
+          <h1>{shownName}</h1>
+          <div className="detail-title-row">
+            <p className="detail-description">{shownDescription}</p>
+            <TranslateToggle
+              translated={translated}
+              working={content.working}
+              onTranslate={() => translateContent({
+                names: [product.name],
+                descriptions: [product.description],
+                reviews: (product.reviews || []).map((review) => review.body).filter(Boolean),
+              })}
+              onShowOriginal={() => translateContent({ names: [], descriptions: [], reviews: [] })}
+            />
+          </div>
+          <div className="detail-shop"><span>{t("product.soldBy")}</span><strong>{product.shop?.name}</strong><small>{t(`region.${product.shop?.region}`, {}, product.shop?.region)}, Azerbaijan</small></div>
+          <div className="detail-season"><span>{t("product.season")}</span><strong>{t(`season.${product.season}`, {}, product.season)}</strong><span className="stock-note">{t("product.inStock", { n: product.stock })}</span></div>
           <div className="detail-purchase"><strong>{money(product.price_azn)}</strong><span className="muted">{t("product.contactToBuy")}</span></div>
-          <ReviewSection productId={product.id} reviews={product.reviews} onDone={() => { load().then(onFlash ? undefined : undefined); }} />
+          <ReviewSection productId={product.id} reviews={product.reviews} translations={translated ? content.reviews : null} onDone={() => { load().then(onFlash ? undefined : undefined); }} />
         </div>
       </section>
       <section className="seller-contact-section">
@@ -355,7 +415,7 @@ function ProductDetail({ id, onNavigate, onFlash }) {
   );
 }
 
-function ReviewSection({ productId, reviews, onDone }) {
+function ReviewSection({ productId, reviews, translations, onDone }) {
   const t = useT();
   const session = getSession();
   const isCustomer = session?.user?.role === "customer";
@@ -367,7 +427,7 @@ function ReviewSection({ productId, reviews, onDone }) {
       {reviews?.length > 0 && (
         <div className="review-list">
           {reviews.map((review) => (
-            <div className="review-line" key={review.id}><b>{"★".repeat(review.rating)}</b><span>{review.body || t("reviews.noComment")}</span><small>{review.customer}</small></div>
+            <div className="review-line" key={review.id}><b>{"★".repeat(review.rating)}</b><span>{(translations && review.body && translations[review.body]) || review.body || t("reviews.noComment")}</span><small>{review.customer}</small></div>
           ))}
         </div>
       )}
