@@ -14,11 +14,17 @@ The repo splits into five parts:
 
 One command drives everything from the repo root:
 
+**macOS / Linux:**
 ```bash
 ./bazaario dev
 ```
 
-That starts the API on `127.0.0.1:5050` and the frontend on `127.0.0.1:5173`; Ctrl-C stops both. From a fresh clone, run `./bazaario setup && ./bazaario seed` first. Other subcommands: `api`, `web`, `seed`, `test`, `build`, `images`, `status`.
+**Windows (PowerShell):**
+```powershell
+.\bazaario.ps1 dev
+```
+
+That starts the API on `127.0.0.1:5050` and the frontend on `127.0.0.1:5173`. Ctrl-C stops both. From a fresh clone, run `./bazaario setup && ./bazaario seed` first (or `.\bazaario.ps1 setup; .\bazaario.ps1 seed` on Windows). Other subcommands: `api`, `web`, `seed`, `test`, `build`, `images`, `status`.
 
 ### 1. Python API
 
@@ -28,10 +34,10 @@ source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env
 python seed.py
-flask run
+python app.py
 ```
 
-`flask run` serves the API at `http://localhost:5000`. The default `.env.example` uses a local SQLite file so the first boot needs nothing else. The same `DATABASE_URL` setting accepts PostgreSQL; see the next section.
+`python app.py` serves the API at `http://127.0.0.1:5050`. The default `.env.example` uses a local SQLite file so the first boot needs nothing else. The same `DATABASE_URL` setting accepts PostgreSQL and Supabase URLs.
 
 ### 2. React frontend
 
@@ -43,15 +49,11 @@ npm install
 npm run dev
 ```
 
-The Vite app runs at `http://localhost:5173` and calls `http://localhost:5000/api` by default. To use a different API port without adding another env file:
+The Vite app runs at `http://127.0.0.1:5173` and proxies `/api` to `http://127.0.0.1:5050`.
 
-```bash
-VITE_API_URL=http://127.0.0.1:5050/api npm run dev -- --host 127.0.0.1 --port 5173
-```
+### PostgreSQL and Supabase
 
-### PostgreSQL
-
-For a local PostgreSQL service, choose a strong local password first and export it (or put it in `.env`):
+For a local PostgreSQL service, choose a password and export it:
 
 ```bash
 export POSTGRES_PASSWORD="$(python -c 'import secrets; print(secrets.token_urlsafe(24))')"
@@ -59,10 +61,25 @@ docker compose up -d postgres
 # edit .env and set the matching URL:
 # DATABASE_URL=postgresql+psycopg://bazaario:<your-password>@127.0.0.1:5432/bazaario
 python seed.py
-flask run
+python app.py
 ```
 
-Compose binds the database to loopback and refuses to start without an explicit password. `Flask-SQLAlchemy` talks to PostgreSQL in this mode through `psycopg`. SQLite stays the zero-setup development fallback.
+For Supabase, copy the connection string from your Supabase project settings (Transaction Pooler, port 6543) and run the seed once:
+
+```bash
+DATABASE_URL="postgresql://postgres.xxx:password@aws-0-region.pooler.supabase.com:6543/postgres" python seed.py
+```
+
+## Deployment to Vercel
+
+The repository includes `vercel.json` and `api/index.py` for deployment on Vercel.
+
+1. Import the repository into Vercel.
+2. Add environment variables in Vercel project settings:
+   * `DATABASE_URL`: Your Supabase transaction pooler URL.
+   * `JWT_SECRET_KEY`: A random hex string for signing tokens.
+   * `CORS_ORIGINS`: Your production domain URL.
+3. Deploy. Vercel builds the static React frontend from `frontend/` and routes `/api/*` requests to the Flask serverless function.
 
 ## Demo accounts
 
