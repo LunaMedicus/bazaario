@@ -67,6 +67,16 @@ def _error_payload(message, code=None):
     return payload
 
 
+def _catalog_search_condition(value):
+    term = f"%{value.strip()}%"
+    return or_(
+        Product.name.ilike(term),
+        Product.description.ilike(term),
+        Product.category.ilike(term),
+        ShopProfile.shop_name.ilike(term),
+    )
+
+
 @api.errorhandler(ApiError)
 def handle_api_error(error):
     return jsonify(_error_payload(error.message, error.code)), error.status
@@ -368,25 +378,24 @@ def products():
         query = query.filter(
             or_(*(Product.season.ilike(f"%{term}%") for term in season_terms))
         )
-    search_terms = {
-        request.args[key].strip()
-        for key in ("q", "q_original")
-        if request.args.get(key, "").strip()
-    }
-    if search_terms:
-        search_conditions = []
-        for text_term in search_terms:
-            term = f"%{text_term}%"
-            search_conditions.extend(
-                (
-                    Product.name.ilike(term),
-                    Product.description.ilike(term),
-                    Product.category.ilike(term),
-                    ShopProfile.shop_name.ilike(term),
-                )
-            )
-        query = query.filter(or_(*search_conditions))
-    rows = query.order_by(Product.created_at.desc()).all()
+    translated_search = request.args.get("q", "").strip()
+    original_search = request.args.get("q_original", "").strip()
+    search_query = (
+        query.filter(_catalog_search_condition(translated_search))
+        if translated_search
+        else query
+    )
+    rows = search_query.order_by(Product.created_at.desc()).all()
+    if (
+        not rows
+        and original_search
+        and original_search.casefold() != translated_search.casefold()
+    ):
+        rows = (
+            query.filter(_catalog_search_condition(original_search))
+            .order_by(Product.created_at.desc())
+            .all()
+        )
     return jsonify({"products": [product.to_dict() for product in rows], "count": len(rows)})
 
 

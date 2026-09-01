@@ -107,6 +107,18 @@ def test_catalog_search_combines_translated_and_original_terms(client, app):
                 description="Raw honey from meadow hives.",
             )
         )
+        db.session.add(
+            Product(
+                shop_id=shop.id,
+                name="Balanced Orchard Box",
+                category="Fruit",
+                price_azn=10,
+                stock=8,
+                season="All year",
+                image_url="https://images.unsplash.com/photo-1610832958506-aa56368176cf?w=1200&q=80",
+                description="A mixed fruit box.",
+            )
+        )
         db.session.commit()
 
     honey = client.get(
@@ -123,6 +135,15 @@ def test_catalog_search_combines_translated_and_original_terms(client, app):
     assert apples.status_code == 200
     assert [product["name"] for product in apples.get_json()["products"]] == [
         "Test Apples"
+    ]
+
+    fallback = client.get(
+        "/api/products",
+        query_string={"q": "not-in-the-catalog", "q_original": "Balanced"},
+    )
+    assert fallback.status_code == 200
+    assert [product["name"] for product in fallback.get_json()["products"]] == [
+        "Balanced Orchard Box"
     ]
 
 
