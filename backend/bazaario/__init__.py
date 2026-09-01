@@ -33,6 +33,10 @@ def create_app(config_overrides=None):
 
     app.register_blueprint(api, url_prefix="/api")
 
+    @app.get("/")
+    def healthcheck():
+        return jsonify({"status": "ok", "service": "bazaario-api"}), 200
+
     @app.after_request
     def cache_public_catalog(response):
         # Public, unauthenticated catalog reads are safe to reuse for a short

@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -10,7 +10,7 @@ ALLOWED_ROLES = ("customer", "shop", "admin")
 
 
 def utc_now():
-    return datetime.utcnow()
+    return datetime.now(timezone.utc)
 
 
 class User(db.Model):

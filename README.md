@@ -2,6 +2,8 @@
 
 Bazaario is a shop-to-customer marketplace for agricultural products from Azerbaijan. It covers eight categories only: Fruit, Vegetables, Grains, Dairy, Honey & bee products, Herbs, Nuts and Tea.
 
+Live deployment: [bazaario-sepia.vercel.app](https://bazaario-sepia.vercel.app)
+
 The repo splits into five parts:
 
 - `backend/` holds the Flask REST API, SQLAlchemy models, JWT claims and role gates.
@@ -24,7 +26,7 @@ One command drives everything from the repo root:
 .\bazaario.ps1 dev
 ```
 
-That starts the API on `127.0.0.1:5050` and the frontend on `127.0.0.1:5173`. Ctrl-C stops both. From a fresh clone, run `./bazaario setup && ./bazaario seed` first (or `.\bazaario.ps1 setup; .\bazaario.ps1 seed` on Windows). Other subcommands: `api`, `web`, `seed`, `test`, `build`, `images`, `status`.
+That starts the API on `127.0.0.1:8000` and the frontend on `127.0.0.1:5173`. Ctrl-C stops both. From a fresh clone, run `./bazaario setup && ./bazaario seed` first (or `.\bazaario.ps1 setup; .\bazaario.ps1 seed` on Windows). Other subcommands: `api`, `web`, `seed`, `test`, `build`, `images`, `status`.
 
 ### 1. Python API
 
@@ -37,7 +39,7 @@ python seed.py
 python app.py
 ```
 
-`python app.py` serves the API at `http://127.0.0.1:5050`. The default `.env.example` uses a local SQLite file so the first boot needs nothing else. The same `DATABASE_URL` setting accepts PostgreSQL and Supabase URLs.
+`python app.py` serves the API at `http://127.0.0.1:8000`. The default `.env.example` uses a local SQLite file so the first boot needs nothing else. The same `DATABASE_URL` setting accepts PostgreSQL and Supabase URLs.
 
 ### 2. React frontend
 
@@ -49,7 +51,7 @@ npm install
 npm run dev
 ```
 
-The Vite app runs at `http://127.0.0.1:5173` and proxies `/api` to `http://127.0.0.1:5050`.
+The Vite app runs at `http://127.0.0.1:5173` and proxies `/api` to `http://127.0.0.1:8000`.
 
 ### PostgreSQL and Supabase
 

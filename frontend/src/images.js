@@ -24,7 +24,7 @@ function wikimediaThumb(url, width) {
     /^(https:\/\/upload\.wikimedia\.org\/wikipedia\/commons\/)([^/]+\/[^/]+)\/([^/?]+)$/,
   );
   if (direct) {
-    return `${direct[1]}thumb/${direct[2]}/${px}${direct[3]}`;
+    return `${direct[1]}thumb/${direct[2]}/${direct[3]}/${px}${direct[3]}`;
   }
   return url;
 }

@@ -4,7 +4,7 @@ from functools import wraps
 from urllib.parse import urlparse
 
 import requests
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, g, jsonify, request
 from flask_jwt_extended import (
     create_access_token,
     get_jwt,
@@ -13,6 +13,7 @@ from flask_jwt_extended import (
 )
 from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import joinedload, selectinload
 
 from .extensions import db
 from .models import (
@@ -106,6 +107,8 @@ def _text(data, field, max_length=None):
 
 
 def _current_user():
+    if hasattr(g, "current_user") and g.current_user is not None:
+        return g.current_user
     user = db.session.get(User, int(get_jwt_identity()))
     if not user:
         raise ApiError("User no longer exists", 401, "unauthorized")
@@ -113,6 +116,7 @@ def _current_user():
         raise ApiError("Account is suspended", 403, "account_suspended")
     if user.account_status != "active":
         raise ApiError("Account is not active", 403, "account_inactive")
+    g.current_user = user
     return user
 
 
@@ -132,6 +136,7 @@ def role_required(*allowed_roles):
                 return jsonify(_error_payload("Account is not active", "account_inactive")), 403
             if user.role != role:
                 return jsonify({"error": "forbidden", "message": "You do not have permission for this role"}), 403
+            g.current_user = user
             return view(*args, **kwargs)
 
         return wrapped
@@ -171,7 +176,7 @@ def _verify_image_url(image_url):
             headers={"User-Agent": "Bazaario image verifier/1.0"},
             allow_redirects=True,
             stream=True,
-            timeout=(5, 10),
+            timeout=(3, 5),
         )
     except requests.RequestException as exc:
         raise ApiError("image_url could not be verified", 422, "image_not_verified") from exc
@@ -338,6 +343,10 @@ def meta():
 def products():
     query = (
         Product.query
+        .options(
+            joinedload(Product.shop).joinedload(User.shop_profile),
+            selectinload(Product.reviews),
+        )
         .join(User, Product.shop_id == User.id)
         .join(ShopProfile, ShopProfile.user_id == User.id)
         .filter(
@@ -370,6 +379,10 @@ def products():
 def product_detail(product_id):
     product = (
         Product.query
+        .options(
+            joinedload(Product.shop).joinedload(User.shop_profile),
+            selectinload(Product.reviews).joinedload(Review.customer),
+        )
         .join(User, Product.shop_id == User.id)
         .join(ShopProfile, ShopProfile.user_id == User.id)
         .filter(

@@ -3,7 +3,7 @@
 # Usage: ./bazaario <command>
 #   setup    first-time install: python venv + pip + npm
 #   seed     reset and seed the database (verifies all product images first)
-#   api      run the Flask API on 127.0.0.1:5050
+#   api      run the Flask API on 127.0.0.1:8000
 #   web      run the Vite frontend on 127.0.0.1:5173
 #   dev      run api + web together; Ctrl-C stops both
 #   test     run the pytest suite
@@ -13,7 +13,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-API_PORT="${BAZAARIO_API_PORT:-5050}"
+API_PORT="${BAZAARIO_API_PORT:-8000}"
 WEB_PORT="${BAZAARIO_WEB_PORT:-5173}"
 PY=".venv/bin/python"
 
