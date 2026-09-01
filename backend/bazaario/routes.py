@@ -368,9 +368,24 @@ def products():
         query = query.filter(
             or_(*(Product.season.ilike(f"%{term}%") for term in season_terms))
         )
-    if request.args.get("q"):
-        term = f"%{request.args['q'].strip()}%"
-        query = query.filter(Product.name.ilike(term) | Product.description.ilike(term))
+    search_terms = {
+        request.args[key].strip()
+        for key in ("q", "q_original")
+        if request.args.get(key, "").strip()
+    }
+    if search_terms:
+        search_conditions = []
+        for text_term in search_terms:
+            term = f"%{text_term}%"
+            search_conditions.extend(
+                (
+                    Product.name.ilike(term),
+                    Product.description.ilike(term),
+                    Product.category.ilike(term),
+                    ShopProfile.shop_name.ilike(term),
+                )
+            )
+        query = query.filter(or_(*search_conditions))
     rows = query.order_by(Product.created_at.desc()).all()
     return jsonify({"products": [product.to_dict() for product in rows], "count": len(rows)})
 

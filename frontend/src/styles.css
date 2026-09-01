@@ -55,6 +55,8 @@ input, select { width: 100%; border: 1px solid var(--line); border-radius: 2px; 
 input:focus, select:focus { border-color: var(--ink); }
 .filter-bar input, .filter-bar select { border: 0; padding: 0; border-radius: 0; }
 .filter-bar input::placeholder, input::placeholder { color: #aaa7a0; }
+.filter-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.filter-heading small { color: var(--green); font-size: 9px; letter-spacing: .08em; white-space: nowrap; }
 .catalog-meta { display: flex; justify-content: space-between; padding: 0 0 20px; color: var(--muted); font-size: 12px; }
 
 .product-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 23px 18px; }

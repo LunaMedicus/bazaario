@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { api, clearSession, getSession, saveSession } from "./api";
 import { LANGS, LangProvider, getInitialLang, storeLang, useT, useLang, useSetLang, translate } from "./i18n";
-import { translateMany } from "./mt";
+import { translateMany, translateSearchQuery } from "./mt";
 import { cdnImage } from "./images";
 
 const CATEGORIES = [
@@ -211,9 +211,11 @@ function SectionHeading({ eyebrow, title, detail }) {
 
 function CatalogView({ onNavigate }) {
   const t = useT();
+  const lang = useLang();
   const [products, setProducts] = useState([]);
   const [meta, setMeta] = useState({ categories: CATEGORIES, regions: [], seasons: SEASONS });
   const [filters, setFilters] = useState({ q: "", category: "", region: "", season: "" });
+  const [resolvedSearch, setResolvedSearch] = useState({ original: "", translated: "" });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -229,10 +231,41 @@ function CatalogView({ onNavigate }) {
 
   useEffect(() => {
     let active = true;
+    const original = filters.q.trim();
+    const timer = window.setTimeout(async () => {
+      if (!original) {
+        if (active) setResolvedSearch({ original: "", translated: "" });
+        return;
+      }
+      try {
+        const translated = await translateSearchQuery(original, lang);
+        if (active) setResolvedSearch({ original, translated });
+      } catch {
+        if (active) setResolvedSearch({ original, translated: original });
+      }
+    }, 300);
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, [filters.q, lang]);
+
+  useEffect(() => {
+    let active = true;
     setLoading(true);
-    const params = new URLSearchParams(
-      Object.entries(filters).filter(([, value]) => value),
-    ).toString();
+    setError("");
+    const params = new URLSearchParams();
+    if (resolvedSearch.translated) params.set("q", resolvedSearch.translated);
+    if (
+      resolvedSearch.original &&
+      resolvedSearch.original.toLocaleLowerCase() !==
+        resolvedSearch.translated.toLocaleLowerCase()
+    ) {
+      params.set("q_original", resolvedSearch.original);
+    }
+    for (const key of ["category", "region", "season"]) {
+      if (filters[key]) params.set(key, filters[key]);
+    }
     api.products(params)
       .then((data) => {
         if (active) setProducts(data.products || []);
@@ -242,7 +275,7 @@ function CatalogView({ onNavigate }) {
     return () => {
       active = false;
     };
-  }, [filters]);
+  }, [resolvedSearch, filters.category, filters.region, filters.season]);
 
   return (
     <div className="page page-catalog">
@@ -252,11 +285,16 @@ function CatalogView({ onNavigate }) {
 
       <section className="filter-bar" aria-label="Catalog filters">
         <label className="search-field">
-          <span>{t("filter.search")}</span>
+          <span className="filter-heading">
+            <span>{t("filter.search")}</span>
+            <small>{LANGS.map((entry) => entry.label).join(" · ")}</small>
+          </span>
           <input
+            type="search"
             value={filters.q}
             onChange={(event) => setFilters({ ...filters, q: event.target.value })}
             placeholder={t("filter.searchPlaceholder")}
+            autoComplete="off"
           />
         </label>
         <label>

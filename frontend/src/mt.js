@@ -8,10 +8,12 @@
 // when both providers fail.
 const cache = new Map();
 
-async function fromGoogle(text, lang) {
+async function fromGoogle(text, targetLang, sourceLang = "auto") {
   const query =
-    "client=gtx&sl=auto&tl=" +
-    encodeURIComponent(lang) +
+    "client=gtx&sl=" +
+    encodeURIComponent(sourceLang) +
+    "&tl=" +
+    encodeURIComponent(targetLang) +
     "&dt=t&q=" +
     encodeURIComponent(text);
   const bases = ["https://translate.googleapis.com", "/mt"];
@@ -38,12 +40,14 @@ async function fromGoogle(text, lang) {
   throw lastError;
 }
 
-async function fromMyMemory(text, lang) {
+async function fromMyMemory(text, targetLang, sourceLang = "en") {
   const query =
     "q=" +
     encodeURIComponent(text) +
-    "&langpair=en|" +
-    encodeURIComponent(lang);
+    "&langpair=" +
+    encodeURIComponent(sourceLang) +
+    "|" +
+    encodeURIComponent(targetLang);
   const response = await fetch(
     `https://api.mymemory.translated.net/get?${query}`,
   );
@@ -63,10 +67,28 @@ async function fromMyMemory(text, lang) {
 async function fetchOne(text, lang) {
   if (lang === "en") return text;
   try {
-    return await fromGoogle(text, lang);
+    return await fromGoogle(text, lang, "en");
   } catch {
-    return fromMyMemory(text, lang);
+    return fromMyMemory(text, lang, "en");
   }
+}
+
+export async function translateSearchQuery(text, sourceLang) {
+  const clean = String(text || "").trim();
+  if (!clean || sourceLang === "en") return clean;
+
+  const cacheKey = `search:${sourceLang}:en:${clean.toLocaleLowerCase()}`;
+  const cached = cache.get(cacheKey);
+  if (cached) return cached;
+
+  let translated;
+  try {
+    translated = await fromGoogle(clean, "en", sourceLang);
+  } catch {
+    translated = await fromMyMemory(clean, "en", sourceLang);
+  }
+  cache.set(cacheKey, translated);
+  return translated;
 }
 
 export async function translateMany(texts, lang) {

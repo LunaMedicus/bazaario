@@ -5,6 +5,10 @@
   "outputDirectory": "frontend/dist",
   "rewrites": [
     {
+      "source": "/mt/:path*",
+      "destination": "https://translate.googleapis.com/:path*"
+    },
+    {
       "source": "/api/:path*",
       "destination": "/api/index.py"
     },

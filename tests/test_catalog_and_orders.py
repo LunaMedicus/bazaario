@@ -1,5 +1,8 @@
 from tests.conftest import login
 
+from backend.bazaario.extensions import db
+from backend.bazaario.models import Product, User
+
 
 def bearer(token):
     return {"Authorization": f"Bearer {token}"}
@@ -87,6 +90,40 @@ def test_customer_can_filter_catalog_by_category(client):
     autumn = client.get("/api/products?season=Autumn")
     assert autumn.status_code == 200
     assert autumn.get_json()["products"]
+
+
+def test_catalog_search_combines_translated_and_original_terms(client, app):
+    with app.app_context():
+        shop = User.query.filter_by(email="shop@test.az").one()
+        db.session.add(
+            Product(
+                shop_id=shop.id,
+                name="Wildflower Honey Jar",
+                category="Honey & bee products",
+                price_azn=16,
+                stock=12,
+                season="May–September",
+                image_url="https://images.unsplash.com/photo-1587049352846-4a222e784d38?w=1200&q=80",
+                description="Raw honey from meadow hives.",
+            )
+        )
+        db.session.commit()
+
+    honey = client.get(
+        "/api/products", query_string={"q": "honey", "q_original": "Bal"}
+    )
+    assert honey.status_code == 200
+    assert {product["category"] for product in honey.get_json()["products"]} == {
+        "Honey & bee products"
+    }
+
+    apples = client.get(
+        "/api/products", query_string={"q": "apple", "q_original": "alma"}
+    )
+    assert apples.status_code == 200
+    assert [product["name"] for product in apples.get_json()["products"]] == [
+        "Test Apples"
+    ]
 
 
 def test_non_object_json_payload_returns_422(client, auth_tokens):
