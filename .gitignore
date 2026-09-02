@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+.env
+bazaario.db
+instance/
+node_modules/
+dist/
+.DS_Store
+.vercel
+.env.local
+.env.*.local
+supabase/.temp/

@@ -1,0 +1,98 @@
+#!/usr/bin/env bash
+# Bazaario quick-start control script.
+# Usage: ./bazaario <command>
+#   setup    first-time install: python venv + pip + npm
+#   seed     reset and seed the database (verifies all product images first)
+#   api      run the Flask API on 127.0.0.1:8000
+#   web      run the Vite frontend on 127.0.0.1:5173
+#   dev      run api + web together; Ctrl-C stops both
+#   test     run the pytest suite
+#   build    production build of the frontend
+#   images   verify seeded image URLs only
+#   status   show whether the api and web ports are responding
+set -euo pipefail
+cd "$(dirname "$0")"
+
+API_PORT="${BAZAARIO_API_PORT:-8000}"
+WEB_PORT="${BAZAARIO_WEB_PORT:-5173}"
+PY=".venv/bin/python"
+
+need_venv() {
+  if [ ! -x "$PY" ] || ! "$PY" -c "import flask, markupsafe" >/dev/null 2>&1; then
+    echo "Virtualenv missing or incomplete. Running setup first..."
+    "$0" setup
+  fi
+}
+
+case "${1:-help}" in
+  setup)
+    # psycopg-binary wheels only exist for specific CPython versions; prefer a
+    # known-good interpreter instead of whatever "python3" happens to be.
+    if command -v python3.11 >/dev/null 2>&1; then
+      SETUP_PY=python3.11
+    elif command -v python3.12 >/dev/null 2>&1; then
+      SETUP_PY=python3.12
+    elif command -v python3.13 >/dev/null 2>&1; then
+      SETUP_PY=python3.13
+    else
+      SETUP_PY=python3
+    fi
+    echo "Using $SETUP_PY for the virtualenv"
+    "$SETUP_PY" -m venv .venv
+    .venv/bin/pip install -q --upgrade pip
+    .venv/bin/pip install -q -r requirements.txt
+    (cd frontend && [ -d node_modules ] || npm install)
+    echo "Setup complete. Next: ./bazaario seed && ./bazaario dev"
+    ;;
+  seed)
+    need_venv
+    exec "$PY" seed.py
+    ;;
+  api)
+    need_venv
+    exec "$PY" -m flask --app backend.bazaario run --host 127.0.0.1 --port "$API_PORT"
+    ;;
+  web)
+    [ -d frontend/node_modules ] || { echo "Frontend deps missing. Run: ./bazaario setup"; exit 1; }
+    cd frontend
+    # The Vite proxy forwards /api to the backend; no cross-origin URL needed.
+    exec npm run dev -- --host 127.0.0.1 --port "$WEB_PORT"
+    ;;
+  dev)
+    need_venv
+    [ -d frontend/node_modules ] || { echo "Frontend deps missing. Run: ./bazaario setup"; exit 1; }
+    trap 'kill 0' EXIT INT TERM
+    "$PY" -m flask --app backend.bazaario run --host 127.0.0.1 --port "$API_PORT" &
+    (cd frontend && exec npm run dev -- --host 127.0.0.1 --port "$WEB_PORT") &
+    echo "api  -> http://127.0.0.1:${API_PORT}/api"
+    echo "web  -> http://127.0.0.1:${WEB_PORT} (proxies /api to the api port)"
+    echo "Ctrl-C stops both."
+    wait
+    ;;
+  test)
+    need_venv
+    exec "$PY" -m pytest tests/ -q
+    ;;
+  build)
+    [ -d frontend/node_modules ] || { echo "Frontend deps missing. Run: ./bazaario setup"; exit 1; }
+    cd frontend && exec npm run build
+    ;;
+  images)
+    need_venv
+    exec "$PY" scripts/check_images.py
+    ;;
+  status)
+    for name_port in "api:${API_PORT}" "web:${WEB_PORT}"; do
+      name="${name_port%%:*}"; port="${name_port##*:}"
+      code=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:${port}/" || true)
+      if [ "$code" = "000" ]; then
+        echo "$name (port $port): down"
+      else
+        echo "$name (port $port): up (HTTP $code)"
+      fi
+    done
+    ;;
+  help|*)
+    sed -n '2,13p' "$0"
+    ;;
+esac
