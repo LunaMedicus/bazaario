@@ -38,6 +38,11 @@ class User(db.Model):
         "ShopProfile", back_populates="user", uselist=False, cascade="all, delete-orphan"
     )
     products = db.relationship("Product", back_populates="shop")
+    favorites = db.relationship(
+    "Favorite",
+    back_populates="customer",
+    cascade="all, delete-orphan",
+    )
 
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
@@ -140,6 +145,11 @@ class Product(db.Model):
     reviews = db.relationship(
         "Review", back_populates="product", cascade="all, delete-orphan"
     )
+    favorites = db.relationship(
+    "Favorite",
+    back_populates="product",
+    cascade="all, delete-orphan",
+    )
 
     def to_dict(self):
         profile = self.shop.shop_profile if self.shop else None
@@ -196,7 +206,42 @@ class Review(db.Model):
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
 
+class Favorite(db.Model):
+    __tablename__ = "favorites"
+    __table_args__ = (
+        db.UniqueConstraint(
+            "customer_id",
+            "product_id",
+            name="uq_favorite_customer_product",
+        ),
+    )
 
+    id = db.Column(db.Integer, primary_key=True)
+    customer_id = db.Column(
+        db.Integer,
+        db.ForeignKey("users.id"),
+        nullable=False,
+        index=True,
+    )
+    product_id = db.Column(
+        db.Integer,
+        db.ForeignKey("products.id"),
+        nullable=False,
+        index=True,
+    )
+    created_at = db.Column(db.DateTime, nullable=False, default=utc_now)
+
+    customer = db.relationship("User", back_populates="favorites")
+    product = db.relationship("Product", back_populates="favorites")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "customer_id": self.customer_id,
+            "product_id": self.product_id,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+        
 class Message(db.Model):
     __tablename__ = "messages"
     __table_args__ = (

@@ -107,6 +107,8 @@ function App() {
         onFlash={flash}
       />
     );
+  } else if (route === "/favorites") {
+    content = <FavoritesView onNavigate={navigate} />;
   } else {
     content = <CatalogView onNavigate={navigate} />;
   }
@@ -168,10 +170,22 @@ function Header({ session, onNavigate, onLogout }) {
 
 function Nav({ session, onNavigate }) {
   const t = useT();
+
   return (
     <nav className="main-nav">
-      <button onClick={() => onNavigate("/")}>{t("nav.catalog")}</button>
-      {session && <button onClick={() => onNavigate("/dashboard")}>{t("nav.dashboard")}</button>}
+      <button onClick={() => onNavigate("/")}>
+        {t("nav.catalog")}
+      </button>
+
+      <button onClick={() => onNavigate("/favorites")}>
+        Favorites
+      </button>
+
+      {session && (
+        <button onClick={() => onNavigate("/dashboard")}>
+          {t("nav.dashboard")}
+        </button>
+      )}
     </nav>
   );
 }
@@ -345,26 +359,249 @@ function CatalogView({ onNavigate }) {
 function ProductCard({ product, onOpen }) {
   const t = useT();
   const lang = useLang();
+
+  const [isFavorite, setIsFavorite] = useState(() => {
+    try {
+      const favorites = JSON.parse(
+        localStorage.getItem("bazaario_favorites") || "[]"
+      );
+      return favorites.includes(product.id);
+    } catch {
+      return false;
+    }
+  });
+
+  
+
+  const toggleFavorite = (event) => {
+    event.stopPropagation();
+
+    try {
+      const audio = new Audio(clickSound);
+      audio.volume = 1;
+      audio.play().catch((error) => {
+          console.error("Favorite sound error:", error);
+      });
+      const favorites = JSON.parse(
+        localStorage.getItem("bazaario_favorites") || "[]"
+      );
+
+      let nextFavorites;
+
+      if (favorites.includes(product.id)) {
+        nextFavorites = favorites.filter((id) => id !== product.id);
+        setIsFavorite(false);
+      } else {
+        nextFavorites = [...favorites, product.id];
+        setIsFavorite(true);
+      }
+
+      localStorage.setItem(
+        "bazaario_favorites",
+        JSON.stringify(nextFavorites)
+      );
+    } catch {
+      // Ignore localStorage errors
+    }
+  };
+
   const shownName = product.name;
+
   return (
     <article className="product-card">
-      <button className="product-image-button" onClick={onOpen} aria-label={`View ${shownName}`}>
-        <img src={cdnImage(product.image_url, "card")} alt={shownName} loading="lazy" decoding="async" width="480" height="320" />
-        <span className="image-label">{t(`cat.${product.category}`, {}, product.category)}</span>
-      </button>
+      <div className="product-image-wrap">
+        <button
+          className="product-image-button"
+          onClick={onOpen}
+          aria-label={`View ${shownName}`}
+        >
+          <img
+            src={cdnImage(product.image_url, "card")}
+            alt={shownName}
+            loading="lazy"
+            decoding="async"
+            width="480"
+            height="320"
+          />
+
+          <span className="image-label">
+            {t(`cat.${product.category}`, {}, product.category)}
+          </span>
+        </button>
+
+        <button
+          type="button"
+          className={`favorite-button ${isFavorite ? "active" : ""}`}
+          onClick={toggleFavorite}
+          aria-label={
+            isFavorite
+              ? `Remove ${shownName} from favorites`
+              : `Add ${shownName} to favorites`
+          }
+          aria-pressed={isFavorite}
+        >
+          {isFavorite ? "♥" : "♡"}
+        </button>
+      </div>
+
       <div className="product-card-body">
         <div className="product-card-topline">
-          <span>{t(`region.${product.region}`, {}, product.region)}</span>
-          <span>{t(`season.${product.season}`, {}, null) || localiseSeasonWindow(product.season, lang)}</span>
+          <span>
+            {t(`region.${product.region}`, {}, product.region)}
+          </span>
+
+          <span>
+            {t(`season.${product.season}`, {}, null) ||
+              localiseSeasonWindow(product.season, lang)}
+          </span>
         </div>
-        <button className="product-name" onClick={onOpen}>{shownName}</button>
-        <div className="product-shop">{product.shop?.name}</div>
+
+        <button className="product-name" onClick={onOpen}>
+          {shownName}
+        </button>
+
+        <div className="product-shop">
+          {product.shop?.name}
+        </div>
+
         <div className="product-card-bottom">
           <strong>{money(product.price_azn)}</strong>
-          <button className="add-button" onClick={onOpen}>{t("product.view")}</button>
+
+          <button
+            className="add-button"
+            onClick={onOpen}
+          >
+            {t("product.view")}
+          </button>
         </div>
       </div>
     </article>
+  );
+}
+
+function FavoritesView({ onNavigate }) {
+  const [products, setProducts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  const loadFavorites = async () => {
+    setLoading(true);
+    setError("");
+
+    try {
+      const savedFavorites = JSON.parse(
+        localStorage.getItem("bazaario_favorites") || "[]"
+      );
+
+      if (!savedFavorites.length) {
+        setProducts([]);
+        setLoading(false);
+        return;
+      }
+
+      const data = await api.products(new URLSearchParams());
+      const allProducts = data.products || [];
+
+      const favoriteProducts = allProducts.filter((product) =>
+        savedFavorites.includes(product.id)
+      );
+
+      setProducts(favoriteProducts);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadFavorites();
+  }, []);
+
+  const removeFavorite = (productId) => {
+    try {
+      const favorites = JSON.parse(
+        localStorage.getItem("bazaario_favorites") || "[]"
+      );
+
+      const nextFavorites = favorites.filter(
+        (id) => id !== productId
+      );
+
+      localStorage.setItem(
+        "bazaario_favorites",
+        JSON.stringify(nextFavorites)
+      );
+
+      setProducts((current) =>
+        current.filter((product) => product.id !== productId)
+      );
+    } catch {
+      // Ignore localStorage errors
+    }
+  };
+
+  return (
+    <div className="page page-catalog">
+      <section className="catalog-intro">
+        <h1>Favorites</h1>
+        <p>
+          Your saved products
+        </p>
+      </section>
+
+      {error && <InlineError message={error} />}
+
+      {loading ? (
+        <div className="empty-state">
+          Loading favorites...
+        </div>
+      ) : products.length ? (
+        <>
+          <div className="catalog-meta">
+            <span>
+              {products.length}{" "}
+              {products.length === 1 ? "favorite" : "favorites"}
+            </span>
+          </div>
+
+          <div className="product-grid">
+            {products.map((product) => (
+              <div className="favorite-product-wrapper" key={product.id}>
+                <ProductCard
+                  product={product}
+                  onOpen={() =>
+                    onNavigate(`/product/${product.id}`)
+                  }
+                />
+
+                <button
+                  type="button"
+                  className="favorite-remove-button"
+                  onClick={() => removeFavorite(product.id)}
+                >
+                  Remove from favorites
+                </button>
+              </div>
+            ))}
+          </div>
+        </>
+      ) : (
+        <div className="empty-state favorites-empty">
+          <h2>No favorites yet</h2>
+          <p>
+            Go to the catalog and click ♡ on products you want to save.
+          </p>
+
+          <button
+            className="button"
+            onClick={() => onNavigate("/")}
+          >
+            Browse products
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
 

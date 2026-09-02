@@ -24,6 +24,7 @@ from .models import (
     Region,
     Review,
     User,
+    Favorite,
     utc_now,
 )
 
@@ -488,6 +489,106 @@ def customer_dashboard():
         }
     )
 
+@api.get("/customer/favorites")
+@jwt_required()
+@role_required("customer")
+def customer_favorites():
+    user = _current_user()
+
+    favorites = (
+        Favorite.query
+        .filter_by(customer_id=user.id)
+        .join(Product, Favorite.product_id == Product.id)
+        .options(
+            joinedload(Favorite.product)
+            .joinedload(Product.shop)
+            .joinedload(User.shop_profile),
+            selectinload(Favorite.product).selectinload(Product.reviews),
+        )
+        .order_by(Favorite.created_at.desc())
+        .all()
+    )
+
+    return jsonify({
+        "favorites": [
+            favorite.product.to_dict()
+            for favorite in favorites
+            if favorite.product
+        ],
+        "count": len(favorites),
+    })
+
+
+@api.post("/customer/favorites/<int:product_id>")
+@jwt_required()
+@role_required("customer")
+def add_favorite(product_id):
+    user = _current_user()
+
+    product = (
+        Product.query
+        .join(User, Product.shop_id == User.id)
+        .join(ShopProfile, ShopProfile.user_id == User.id)
+        .filter(
+            Product.id == product_id,
+            Product.available.is_(True),
+            Product.stock > 0,
+            User.account_status == "active",
+            ShopProfile.verification_status == "approved",
+        )
+        .first()
+    )
+
+    if not product:
+        raise ApiError("Product not found", 404, "not_found")
+
+    existing = Favorite.query.filter_by(
+        customer_id=user.id,
+        product_id=product.id,
+    ).first()
+
+    if existing:
+        return jsonify({
+            "favorite": existing.to_dict(),
+            "is_favorite": True,
+        })
+
+    favorite = Favorite(
+        customer_id=user.id,
+        product_id=product.id,
+    )
+
+    db.session.add(favorite)
+    _commit()
+
+    return jsonify({
+        "favorite": favorite.to_dict(),
+        "is_favorite": True,
+    }), 201
+
+
+@api.delete("/customer/favorites/<int:product_id>")
+@jwt_required()
+@role_required("customer")
+def remove_favorite(product_id):
+    user = _current_user()
+
+    favorite = Favorite.query.filter_by(
+        customer_id=user.id,
+        product_id=product_id,
+    ).first()
+
+    if not favorite:
+        return jsonify({
+            "is_favorite": False,
+        })
+
+    db.session.delete(favorite)
+    _commit()
+
+    return jsonify({
+        "is_favorite": False,
+    })
 
 PHONE_ALLOWED_CHARACTERS = set("0123456789+ ()-")
 
