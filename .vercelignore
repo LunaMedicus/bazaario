@@ -1,0 +1,10 @@
+.env
+.env.*
+.vercel
+.venv
+*.db
+instance
+frontend/dist
+frontend/node_modules
+__pycache__
+.pytest_cache
