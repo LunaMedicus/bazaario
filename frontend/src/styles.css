@@ -703,3 +703,6 @@ select {
   align-items: center;
   gap: 6px;
 }
+.favorite-active {
+  color: #d94f4f;
+}
