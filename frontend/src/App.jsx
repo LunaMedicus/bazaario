@@ -103,7 +103,11 @@ function App() {
   const onLogin = (payload) => {
     saveSession(payload);
     setSession(payload);
-    flash(t("misc.signedInAs", { name: payload.user.display_name }));
+    flash(
+      t("misc.signedInAs", {
+        name: payload.user.display_name,
+      })
+    );
     navigate("/dashboard");
   };
 
@@ -151,9 +155,13 @@ function App() {
       />
     );
   } else if (route === "/favorites") {
-    content = <FavoritesView onNavigate={navigate} />;
+    content = (
+      <FavoritesView onNavigate={navigate} />
+    );
   } else {
-    content = <CatalogView onNavigate={navigate} />;
+    content = (
+      <CatalogView onNavigate={navigate} />
+    );
   }
 
   return (
@@ -181,24 +189,6 @@ function App() {
   );
 }
 
-function LangSwitcher() {
-  const lang = useLang();
-  const setLang = useSetLang();
-  return (
-    <div className="lang-switcher" role="group" aria-label="Language">
-      {LANGS.map((entry) => (
-        <button
-          key={entry.code}
-          className={lang === entry.code ? "active" : ""}
-          onClick={() => setLang(entry.code)}
-        >
-          {entry.label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
 function Header({
   session,
   onNavigate,
@@ -216,7 +206,10 @@ function Header({
         bazaario<span>.</span>
       </button>
 
-      <Nav session={session} onNavigate={onNavigate} />
+      <Nav
+        session={session}
+        onNavigate={onNavigate}
+      />
 
       <div className="header-actions">
         <LangSwitcher />
@@ -231,19 +224,26 @@ function Header({
             <span className={`role-tag ${session.user.role}`}>
               {session.user.role}
             </span>
-            <SignOutButton onLogout={onLogout} />
+
+            <SignOutButton
+              onLogout={onLogout}
+            />
           </>
         ) : (
           <>
-            <SignInButton onNavigate={onNavigate} />
-            <JoinButton onNavigate={onNavigate} />
+            <SignInButton
+              onNavigate={onNavigate}
+            />
+
+            <JoinButton
+              onNavigate={onNavigate}
+            />
           </>
         )}
       </div>
     </header>
   );
 }
-
 
 function Nav({ session, onNavigate }) {
   const t = useT();
