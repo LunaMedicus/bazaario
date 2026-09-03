@@ -694,3 +694,12 @@ select {
 .theme-toggle:hover {
   transform: scale(1.05);
 }
+.product-share {
+  margin: 18px 0 10px;
+}
+
+.product-share .button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}

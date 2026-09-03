@@ -6,6 +6,7 @@ import { translateMany, translateSearchQuery } from "./mt";
 import { cdnImage } from "./images";
 import StarRating from "./components/StarRating";
 import ThemeToggle from "./components/ThemeToggle";
+import LangSwitcher from "./components/LangSwitcher";
 
 const CATEGORIES = [
   "Fruit",
@@ -188,6 +189,7 @@ function App() {
     </LangProvider>
   );
 }
+
 
 function Header({
   session,
@@ -756,27 +758,79 @@ function ProductDetail({ id, onNavigate, onFlash }) {
   }
 
   if (!product) {
-    return <div className="page empty-state">{t("product.loading")}</div>;
+    return (
+      <div className="page empty-state">
+        {t("product.loading")}
+      </div>
+    );
   }
 
-  const translated = content.lang === lang && Boolean(content.map[product.name]);
-  const shownName = translated ? content.map[product.name] : product.name;
-  const dictSeason = t(`season.${product.season}`, {}, null);
-  const shownSeason = dictSeason || localiseSeasonWindow(product.season, lang);
+  const translated =
+    content.lang === lang &&
+    Boolean(content.map[product.name]);
+
+  const shownName = translated
+    ? content.map[product.name]
+    : product.name;
+
+  const dictSeason = t(
+    `season.${product.season}`,
+    {},
+    null
+  );
+
+  const shownSeason =
+    dictSeason ||
+    localiseSeasonWindow(product.season, lang);
+
   const shownDescription = translated
-    ? content.map[product.description] || product.description
+    ? content.map[product.description] ||
+      product.description
     : product.description;
+
+    const handleShare = async () => {
+      const shareUrl = window.location.href;
+
+      try {
+        if (navigator.share) {
+          await navigator.share({
+            title: shownName,
+            text: `${shownName}\n\n${shownDescription}`,
+            url: shareUrl,
+          });
+          return;
+        }
+
+        await navigator.clipboard.writeText(shareUrl);
+        onFlash(t("product.linkCopied"));
+      } catch (error) {
+        if (error?.name === "AbortError") {
+          return;
+        }
+
+        console.error("Share error:", error);
+      }
+    };
+
+
+
 
   return (
     <div className="page product-detail-page">
-      <button className="back-link" onClick={() => onNavigate("/")}>
+      <button
+        className="back-link"
+        onClick={() => onNavigate("/")}
+      >
         {t("product.back")}
       </button>
 
       <section className="product-detail">
         <div className="detail-image-wrap">
           <img
-            src={cdnImage(product.image_url, "detail")}
+            src={cdnImage(
+              product.image_url,
+              "detail"
+            )}
             alt={shownName}
             decoding="async"
             fetchpriority="high"
@@ -787,54 +841,112 @@ function ProductDetail({ id, onNavigate, onFlash }) {
 
         <div className="detail-copy">
           <p className="eyebrow orange">
-            {t(`cat.${product.category}`, {}, product.category)} /{" "}
-            {t(`region.${product.region}`, {}, product.region)}
+            {t(
+              `cat.${product.category}`,
+              {},
+              product.category
+            )}{" "}
+            /{" "}
+            {t(
+              `region.${product.region}`,
+              {},
+              product.region
+            )}
           </p>
+
           <h1>{shownName}</h1>
 
+          {/* SHARE BUTTON */}
+          <div className="product-share">
+            <button
+              type="button"
+              className="button button-small"
+              onClick={handleShare}
+            >
+              🔗 {t("product.share")}
+            </button>
+          </div>
+
           <div className="detail-title-row">
-            <p className="detail-description">{shownDescription}</p>
+            <p className="detail-description">
+              {shownDescription}
+            </p>
+
             <TranslateToggle
               translated={translated}
               working={content.working}
-              failed={content.lang === lang && content.failed}
+              failed={
+                content.lang === lang &&
+                content.failed
+              }
               onTranslate={() =>
                 translateContent([
                   product.name,
                   product.description,
-                  ...(product.reviews || []).map((review) => review.body),
+                  ...(product.reviews || []).map(
+                    (review) => review.body
+                  ),
                 ])
               }
-              onShowOriginal={() => translateContent([])}
+              onShowOriginal={() =>
+                translateContent([])
+              }
             />
           </div>
 
           <div className="detail-shop">
-            <span>{t("product.soldBy")}</span>
-            <strong>{product.shop?.name}</strong>
+            <span>
+              {t("product.soldBy")}
+            </span>
+
+            <strong>
+              {product.shop?.name}
+            </strong>
+
             <small>
-              {t(`region.${product.shop?.region}`, {}, product.shop?.region)},
-              Azerbaijan
+              {t(
+                `region.${product.shop?.region}`,
+                {},
+                product.shop?.region
+              )}
+              , Azerbaijan
             </small>
           </div>
 
           <div className="detail-season">
-            <span>{t("product.season")}</span>
-            <strong>{shownSeason}</strong>
+            <span>
+              {t("product.season")}
+            </span>
+
+            <strong>
+              {shownSeason}
+            </strong>
+
             <span className="stock-note">
-              {t("product.inStock", { n: product.stock })}
+              {t("product.inStock", {
+                n: product.stock,
+              })}
             </span>
           </div>
 
           <div className="detail-purchase">
-            <strong>{money(product.price_azn)}</strong>
-            <span className="muted">{t("product.contactToBuy")}</span>
+            <strong>
+              {money(product.price_azn)}
+            </strong>
+
+            <span className="muted">
+              {t("product.contactToBuy")}
+            </span>
           </div>
 
           <ReviewSection
             productId={product.id}
             reviews={product.reviews}
-            translations={translated ? content.map : null}
+            translations={
+              translated
+                ? content.map
+                : null
+            }
             onDone={() => {
               load();
             }}
@@ -843,11 +955,16 @@ function ProductDetail({ id, onNavigate, onFlash }) {
       </section>
 
       <section className="seller-contact-section">
-        <SellerContact shop={product.shop} />
+        <SellerContact
+          shop={product.shop}
+        />
+
         <MessageThreadPanel
           productId={product.id}
           heading={t("messages.with", {
-            shop: product.shop?.name || t("messages.withFallback"),
+            shop:
+              product.shop?.name ||
+              t("messages.withFallback"),
           })}
         />
       </section>
