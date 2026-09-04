@@ -13,3 +13,4 @@ dist/
 .env.local
 .env.*.local
 supabase/.temp/
+smoke.db

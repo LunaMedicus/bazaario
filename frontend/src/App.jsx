@@ -387,9 +387,14 @@ function JoinButton({ onNavigate }) {
 }
 
 function Footer() {
+  const t = useT();
+
   return (
     <footer className="site-footer">
       <span>Bazaario copyright 2026</span>
+      <a href="/api/docs" target="_blank" rel="noreferrer">
+        {t("footer.apiDocs")}
+      </a>
     </footer>
   );
 }
