@@ -7,6 +7,7 @@ Live deployment: [bazaario-sepia.vercel.app](https://bazaario-sepia.vercel.app)
 The repo splits into five parts:
 
 - `backend/` holds the Flask REST API, SQLAlchemy models, JWT claims and role gates.
+- `backend/bazaario/openapi.py` builds the OpenAPI description served at `/api/docs`.
 - `frontend/` holds the React (Vite) app for customers, shops and admins.
 - `scripts/check_images.py` verifies every seeded image URL before seeding runs.
 - `seed.py` resets and seeds the database in one command.
@@ -79,9 +80,32 @@ The repository includes `vercel.json` and `api/index.py` for deployment on Verce
 1. Import the repository into Vercel.
 2. Add environment variables in Vercel project settings:
    * `DATABASE_URL`: Your Supabase transaction pooler URL.
-   * `JWT_SECRET_KEY`: A random hex string for signing tokens.
+   * `JWT_SECRET_KEY`: A random secret for signing tokens. **Required.** The app
+     refuses to boot without it on Vercel, because each serverless instance
+     would otherwise generate its own key and sign tokens the next instance
+     rejects, signing users out at random. Generate one with
+     `python -c "import secrets; print(secrets.token_urlsafe(48))"`.
    * `CORS_ORIGINS`: Your production domain URL.
+
+   Any other multi-instance host can demand the same check by setting
+   `BAZAARIO_REQUIRE_JWT_SECRET=1`.
 3. Deploy. Vercel builds the static React frontend from `frontend/` and routes `/api/*` requests to the Flask serverless function.
+
+## API reference
+
+The API describes itself. With the server running, open:
+
+- `http://127.0.0.1:8000/api/docs` - Swagger UI. Press **Authorize**, paste the
+  `access_token` from `POST /api/auth/login`, and every protected route becomes
+  callable from the page.
+- `http://127.0.0.1:8000/api/openapi.json` - the raw OpenAPI 3.0 document, for
+  Postman, Insomnia or a generated client.
+
+On the deployment the same two live at `/api/docs` and `/api/openapi.json`.
+
+The document is generated from the same constants the routes enforce, and
+`tests/test_openapi_docs.py` walks Flask's URL map and fails if a route is added
+without being documented, so the reference cannot drift from the code.
 
 ## Demo accounts
 
@@ -141,7 +165,11 @@ Run the automated suite:
 .venv/bin/python -m pytest tests/ -q
 ```
 
-The tests cover JWT role identity, wrong-role `403` responses, open customer signup, the missing admin registration route, pending shop publish blocking, category `422`, catalog filters, per-product reviews, message threads and phone validation.
+The suite covers JWT role identity, wrong-role `403` responses, open customer
+signup, the missing admin registration route, pending shop publish blocking,
+category `422`, catalog filters, per-product reviews, message threads, phone
+validation, saved products, admin account and profile status staying in step,
+the JWT secret guard, and the OpenAPI document matching the routed URL map.
 
 A manual smoke flow after starting `flask run`:
 
@@ -149,6 +177,39 @@ A manual smoke flow after starting `flask run`:
 2. As customer, open a product, message the shop and leave a review.
 3. Call or message details appear straight on the product page; there is no checkout step.
 4. Use the admin verification queue to approve or suspend a new shop application.
+
+## Saved products
+
+Signed-in customers keep favorites on their account through
+`GET/POST/DELETE /api/customer/favorites`, so the list follows them to a new
+browser or device. Saving twice is idempotent and removing something that was
+never saved is not an error, which keeps the heart control safe to double-tap.
+A saved product drops out of the list as soon as it stops being publicly
+visible - archived, sold out, or its shop suspended - matching the catalog.
+
+Signed-out visitors still get the feature: their picks live in this browser
+under `bazaario_favorites`, and the first time they sign in as a customer those
+picks are carried up to the account.
+
+## Interface
+
+**Three languages.** EN, AZ and RU ship as full dictionaries in
+`frontend/src/i18n.jsx`; every user-facing string resolves through them.
+Database content - listing names, descriptions, review bodies - is not
+translated ahead of time, so the product page offers on-demand machine
+translation through two free providers with automatic fallback
+(`frontend/src/mt.js`). Catalog search translates the query too, and retries
+the original term if the translated one finds nothing.
+
+**Light and dark.** The theme is a token swap on `:root` and
+`[data-theme="dark"]`, remembered in `localStorage`. Every colour is a token,
+so both themes stay consistent without per-component overrides.
+
+**Responsive.** Verified at 375, 768 and 1265 px with no horizontal overflow
+on any page.
+
+**Sharing.** Product pages use the Web Share API where the browser has it and
+fall back to copying the link to the clipboard.
 
 ## Frontend surfaces
 
