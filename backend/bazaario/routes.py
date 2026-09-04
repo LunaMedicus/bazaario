@@ -4,7 +4,7 @@ from functools import wraps
 from urllib.parse import urlparse
 
 import requests
-from flask import Blueprint, g, jsonify, request
+from flask import Blueprint, Response, g, jsonify, request, url_for
 from flask_jwt_extended import (
     create_access_token,
     get_jwt,
@@ -16,6 +16,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import joinedload, selectinload
 
 from .extensions import db
+from .openapi import SWAGGER_UI_HTML, build_spec
 from .models import (
     Category,
     ShopProfile,
@@ -81,6 +82,19 @@ def _catalog_search_condition(value):
 @api.errorhandler(ApiError)
 def handle_api_error(error):
     return jsonify(_error_payload(error.message, error.code)), error.status
+
+
+@api.get("/openapi.json")
+def openapi_spec():
+    """Serve the machine-readable API description."""
+    return jsonify(build_spec(request.url_root.rstrip("/") or "/"))
+
+
+@api.get("/docs")
+def api_docs():
+    """Render the interactive Swagger UI reference."""
+    html = SWAGGER_UI_HTML.replace("SPEC_URL", url_for("api.openapi_spec"))
+    return Response(html, mimetype="text/html")
 
 
 def _data():
