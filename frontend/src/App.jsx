@@ -784,6 +784,19 @@ function ProductDetail({ id, onNavigate, onFlash }) {
   const lang = useLang();
   const [product, setProduct] = useState(null);
   const [error, setError] = useState("");
+
+  const [isFavorite, setIsFavorite] = useState(() => {
+    try {
+      const favorites = JSON.parse(
+        localStorage.getItem("bazaario_favorites") || "[]"
+      );
+
+      return favorites.includes(Number(id));
+    } catch {
+      return false;
+    }
+  });
+
   const [content, translateContent] = useTranslatedContent(lang);
 
   const load = () =>
@@ -794,6 +807,19 @@ function ProductDetail({ id, onNavigate, onFlash }) {
 
   useEffect(() => {
     load();
+  }, [id]);
+
+  // Sync favorite status when product ID changes
+  useEffect(() => {
+    try {
+      const favorites = JSON.parse(
+        localStorage.getItem("bazaario_favorites") || "[]"
+      );
+
+      setIsFavorite(favorites.includes(Number(id)));
+    } catch {
+      setIsFavorite(false);
+    }
   }, [id]);
 
   if (error) {
@@ -835,32 +861,66 @@ function ProductDetail({ id, onNavigate, onFlash }) {
       product.description
     : product.description;
 
-    const handleShare = async () => {
-      const shareUrl = window.location.href;
+  // FAVORITE
+  const toggleFavorite = () => {
+    try {
+      const favorites = JSON.parse(
+        localStorage.getItem("bazaario_favorites") || "[]"
+      );
 
-      try {
-        if (navigator.share) {
-          await navigator.share({
-            title: shownName,
-            text: `${shownName}\n\n${shownDescription}`,
-            url: shareUrl,
-          });
-          return;
-        }
+      const productId = Number(id);
 
-        await navigator.clipboard.writeText(shareUrl);
-        onFlash(t("product.linkCopied"));
-      } catch (error) {
-        if (error?.name === "AbortError") {
-          return;
-        }
+      let nextFavorites;
 
-        console.error("Share error:", error);
+      if (favorites.includes(productId)) {
+        nextFavorites = favorites.filter(
+          (favoriteId) => favoriteId !== productId
+        );
+
+        setIsFavorite(false);
+      } else {
+        nextFavorites = [
+          ...favorites,
+          productId,
+        ];
+
+        setIsFavorite(true);
       }
-    };
 
+      localStorage.setItem(
+        "bazaario_favorites",
+        JSON.stringify(nextFavorites)
+      );
+    } catch (error) {
+      console.error("Favorite error:", error);
+    }
+  };
 
+  // SHARE
+  const handleShare = async () => {
+    const shareUrl = window.location.href;
 
+    try {
+      if (navigator.share) {
+        await navigator.share({
+          title: shownName,
+          text: `${shownName}\n\n${shownDescription}`,
+          url: shareUrl,
+        });
+
+        return;
+      }
+
+      await navigator.clipboard.writeText(shareUrl);
+      onFlash(t("product.linkCopied"));
+    } catch (error) {
+      if (error?.name === "AbortError") {
+        return;
+      }
+
+      console.error("Share error:", error);
+    }
+  };
 
   return (
     <div className="page product-detail-page">
@@ -903,17 +963,31 @@ function ProductDetail({ id, onNavigate, onFlash }) {
 
           <h1>{shownName}</h1>
 
-          {/* SHARE BUTTON */}
+          {/* PRODUCT ACTIONS */}
           <div className="product-share">
             <button
+            type="button"
+            className={`button button-small ${
+              isFavorite ? "favorite-active" : ""
+            }`}
+            onClick={toggleFavorite}
+            aria-label={
+              isFavorite
+              ? `Remove ${shownName} from favorites`
+              : `Add ${shownName} to favorites`
+            }
+            aria-pressed={isFavorite}
+            >
+              {isFavorite ? "♥ Remove from Favorites" : "♡ Add to Favorites"}
+              </button>
+              <button
               type="button"
               className="button button-small"
               onClick={handleShare}
-            >
-              🔗 {t("product.share")}
-            </button>
-          </div>
-
+              >
+                🔗 {t("product.share")}
+                </button>
+                </div>
           <div className="detail-title-row">
             <p className="detail-description">
               {shownDescription}
