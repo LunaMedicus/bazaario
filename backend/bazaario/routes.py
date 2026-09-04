@@ -509,28 +509,34 @@ def customer_dashboard():
 def customer_favorites():
     user = _current_user()
 
+    # A saved product that has since been archived, sold out or pulled with its
+    # shop must not surface here; the catalog hides it for the same reasons.
     favorites = (
         Favorite.query
         .filter_by(customer_id=user.id)
         .join(Product, Favorite.product_id == Product.id)
+        .join(User, Product.shop_id == User.id)
+        .join(ShopProfile, ShopProfile.user_id == User.id)
+        .filter(
+            Product.available.is_(True),
+            Product.stock > 0,
+            User.account_status == "active",
+            ShopProfile.verification_status == "approved",
+        )
         .options(
+            # Both chains must start with the same strategy for Favorite.product,
+            # or SQLAlchemy rejects the query as a loader-strategy conflict.
             joinedload(Favorite.product)
             .joinedload(Product.shop)
             .joinedload(User.shop_profile),
-            selectinload(Favorite.product).selectinload(Product.reviews),
+            joinedload(Favorite.product).selectinload(Product.reviews),
         )
         .order_by(Favorite.created_at.desc())
         .all()
     )
 
-    return jsonify({
-        "favorites": [
-            favorite.product.to_dict()
-            for favorite in favorites
-            if favorite.product
-        ],
-        "count": len(favorites),
-    })
+    products = [favorite.product.to_dict() for favorite in favorites if favorite.product]
+    return jsonify({"favorites": products, "count": len(products)})
 
 
 @api.post("/customer/favorites/<int:product_id>")
