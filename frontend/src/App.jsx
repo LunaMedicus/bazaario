@@ -298,12 +298,14 @@ function Header({
   theme,
   onToggleTheme,
 }) {
+  const t = useT();
+
   return (
     <header className="site-header">
       <button
         className="wordmark"
         onClick={() => onNavigate("/")}
-        aria-label="Bazaario home"
+        aria-label={t("a11y.home")}
       >
         bazaario<span>.</span>
       </button>
@@ -478,7 +480,7 @@ function CatalogView({ onNavigate }) {
         <h1>{t("catalog.title")}</h1>
       </section>
 
-      <section className="filter-bar" aria-label="Catalog filters">
+      <section className="filter-bar" aria-label={t("a11y.filters")}>
         <label className="search-field">
           <span className="filter-heading">
             <span>{t("filter.search")}</span>
@@ -937,12 +939,13 @@ function ProductDetail({ id, onNavigate, onFlash }) {
             </strong>
 
             <small>
-              {t(
-                `region.${product.shop?.region}`,
-                {},
-                product.shop?.region
-              )}
-              , Azerbaijan
+              {t("product.inAzerbaijan", {
+                region: t(
+                  `region.${product.shop?.region}`,
+                  {},
+                  product.shop?.region
+                ),
+              })}
             </small>
           </div>
 
@@ -1700,7 +1703,7 @@ function ShopDashboard({ onFlash }) {
       </section>
 
       <div className="metric-grid">
-        <Metric label="Listings" value={dashboard.listing_count} />
+        <Metric label={t("metric.listings")} value={dashboard.listing_count} />
       </div>
 
       <div className="dashboard-columns shop-columns">
@@ -1804,7 +1807,10 @@ function ShopDashboard({ onFlash }) {
                   <div>
                     <b>{listing.name}</b>
                     <span>
-                      {listing.category} · {listing.stock} in stock
+                      {t("listings.stockLine", {
+                        category: t(`cat.${listing.category}`, {}, listing.category),
+                        n: listing.stock,
+                      })}
                     </span>
                   </div>
                   <strong>{money(listing.price_azn)}</strong>
