@@ -761,18 +761,38 @@ def send_product_message(product_id):
     return jsonify({"message": message.to_dict()}), 201
 
 
+def _shop_listings(shop_id):
+    """Every listing for one shop, with what to_dict() reads already loaded.
+
+    Without the eager options each product re-queries its shop, that shop's
+    profile and its reviews, so a shop with forty listings ran well over a
+    hundred round trips to render one dashboard.
+    """
+    return (
+        Product.query
+        .options(
+            joinedload(Product.shop).joinedload(User.shop_profile),
+            selectinload(Product.reviews),
+        )
+        .filter_by(shop_id=shop_id)
+        .order_by(Product.created_at.desc())
+        .all()
+    )
+
+
 @api.get("/shop/dashboard")
 @jwt_required()
 @role_required("shop")
 def shop_dashboard():
     user = _current_user()
     profile = user.shop_profile
+    listings = _shop_listings(user.id)
     return jsonify(
         {
             "user": user.to_dict(),
             "verification_status": profile.verification_status if profile else "pending_verification",
-            "listing_count": Product.query.filter_by(shop_id=user.id).count(),
-            "listings": [product.to_dict() for product in Product.query.filter_by(shop_id=user.id).order_by(Product.created_at.desc()).all()],
+            "listing_count": len(listings),
+            "listings": [product.to_dict() for product in listings],
         }
     )
 
@@ -782,7 +802,9 @@ def shop_dashboard():
 @role_required("shop")
 def shop_listings():
     user = _current_user()
-    return jsonify({"listings": [product.to_dict() for product in Product.query.filter_by(shop_id=user.id).order_by(Product.created_at.desc()).all()]})
+    return jsonify(
+        {"listings": [product.to_dict() for product in _shop_listings(user.id)]}
+    )
 
 
 @api.post("/shop/listings")

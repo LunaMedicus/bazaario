@@ -225,3 +225,43 @@ def test_reviews_identify_their_author_by_id_not_display_name(client, auth_token
     by_twin = [r for r in reviews if r["customer_id"] == twin["user"]["id"]]
     assert len(by_twin) == 1
     assert by_twin[0]["body"] == "From the twin."
+
+
+def test_the_shop_dashboard_does_not_scale_queries_with_listing_count(
+    client, app, auth_tokens
+):
+    """Rendering the dashboard must not cost a query per listing."""
+    from sqlalchemy import event
+
+    from backend.bazaario.extensions import db
+
+    headers = {"Authorization": f"Bearer {auth_tokens['shop']}"}
+    listing = {
+        "category": "Fruit",
+        "price_azn": 3.0,
+        "stock": 5,
+        "season": "All year",
+        "image_url": "https://images.unsplash.com/photo-1560806887-1e4cd0b6cbd6?w=1200&q=80",
+    }
+    for index in range(6):
+        client.post("/api/shop/listings", json={**listing, "name": f"Extra {index}"}, headers=headers)
+
+    statements = []
+    with app.app_context():
+        engine = db.engine
+
+    def record(conn, cursor, statement, *args):
+        statements.append(statement)
+
+    event.listen(engine, "before_cursor_execute", record)
+    try:
+        response = client.get("/api/shop/dashboard", headers=headers)
+    finally:
+        event.remove(engine, "before_cursor_execute", record)
+
+    assert response.status_code == 200
+    assert response.get_json()["listing_count"] == 7
+    selects = [s for s in statements if s.lstrip().upper().startswith("SELECT")]
+    # Identity lookup, the eager listing query and its reviews load -- a
+    # constant, not one query per listing.
+    assert len(selects) <= 8, f"{len(selects)} SELECTs for 7 listings:\n" + "\n".join(selects)
