@@ -31,7 +31,7 @@
 
 * { box-sizing: border-box; }
 html { background: var(--paper); }
-body { margin: 0; min-width: 320px; background: var(--paper); }
+body { margin: 0; min-width: 320px; background: var(--paper); overflow-x: hidden; }
 button, input, select { font: inherit; }
 button { color: inherit; cursor: pointer; }
 button:disabled { cursor: wait; opacity: .6; }
@@ -66,10 +66,15 @@ label > span { color: var(--muted); text-transform: uppercase; font-size: 10px; 
 input, select { width: 100%; border: 1px solid var(--line); border-radius: 2px; background: transparent; padding: 12px 13px; color: var(--ink); outline: none; }
 input:focus, select:focus { border-color: var(--ink); }
 .filter-bar input, .filter-bar select { border: 0; padding: 0; border-radius: 0; }
+/* Grid and flex children default to min-width:auto, so a long option label
+   such as "Bütün kateqoriyalar" widened the cell instead of being clipped
+   inside it, and pushed the whole row past the viewport. */
+.filter-bar label { min-width: 0; }
+.filter-bar input, .filter-bar select { width: 100%; max-width: 100%; min-width: 0; }
 .filter-bar input::placeholder, input::placeholder { color: var(--muted); }
 .filter-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .filter-heading small { color: var(--green); font-size: 9px; letter-spacing: .08em; white-space: nowrap; }
-.catalog-meta { display: flex; justify-content: space-between; padding: 0 0 20px; color: var(--muted); font-size: 12px; }
+.catalog-meta { display: flex; flex-wrap: wrap; gap: 4px 16px; justify-content: space-between; padding: 0 0 20px; color: var(--muted); font-size: 12px; }
 
 .product-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 23px 18px; }
 .product-card { min-width: 0; }
@@ -245,10 +250,29 @@ input:focus, select:focus { border-color: var(--ink); }
   .admin-grid { gap: 30px 22px; }
 }
 @media (max-width: 720px) {
-  .site-header { height: 65px; padding: 0 20px; gap: 20px; }
-  .main-nav { gap: 14px; }
+  /* Two tidy rows instead of one row that overflowed: the wordmark keeps the
+     controls company on top, and the nav takes the full width beneath. Sign in
+     and Join used to sit off the right edge, which put the only route to an
+     account out of reach on a phone. */
+  .site-header {
+    height: auto;
+    min-height: 65px;
+    flex-wrap: wrap;
+    padding: 10px 20px;
+    gap: 8px 14px;
+  }
+  .site-header .wordmark { order: 1; font-size: 23px; }
+  .header-actions { order: 2; margin-left: auto; gap: 10px; flex-wrap: nowrap; }
+  .main-nav { order: 3; flex: 1 0 100%; gap: 16px; min-width: 0; }
   .main-nav button { font-size: 11px; }
-  .header-actions { gap: 10px; }
+  .lang-switcher { flex: 0 0 auto; width: auto; min-width: 52px; }
+  .role-tag { padding: 4px 6px; }
+  .button-small { padding: 7px 10px; }
+
+  /* Option labels are longer than a phone-width cell. Clip them inside the
+     cell rather than letting them widen the grid. */
+  .filter-bar label { overflow: hidden; }
+  .filter-bar select { text-overflow: ellipsis; font-size: 13px; }
   .role-tag { display: none; }
   .page { padding: 42px 20px 70px; }
   .catalog-intro, .section-heading { display: block; padding-bottom: 40px; }
@@ -413,31 +437,25 @@ input:focus, select:focus { border-color: var(--ink); }
 }
 
 /* ---- Language switcher ---- */
+/* Rendered as a <select>. The button-era rules gave it a pill border and no
+   width of its own, which collapsed it to an empty circle on narrow screens. */
 .lang-switcher {
-  display: inline-flex;
+  padding: 5px 8px;
   border: 1px solid var(--hairline);
   border-radius: 999px;
-  overflow: hidden;
-  margin-right: 10px;
-}
-
-.lang-switcher button {
-  padding: 4px 10px;
-  font-size: 0.72rem;
-  letter-spacing: 0.04em;
-  background: transparent;
-  border: none;
-  cursor: pointer;
+  background: var(--surface);
   color: var(--ink);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  line-height: 1.2;
+  min-width: 56px;
+  cursor: pointer;
 }
 
-.lang-switcher button + button {
-  border-left: 1px solid var(--hairline);
-}
-
-.lang-switcher button.active {
-  background: var(--ink);
-  color: var(--paper);
+.lang-switcher:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
 }
 
 /* ---- On-demand content translation ---- */
