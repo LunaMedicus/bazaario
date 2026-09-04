@@ -200,6 +200,9 @@ class Review(db.Model):
         return {
             "id": self.id,
             "product_id": self.product_id,
+            # Display names are not unique, so the id is what a client must
+            # compare against to find the signed-in customer's own review.
+            "customer_id": self.customer_id,
             "customer": self.customer.display_name if self.customer else None,
             "rating": self.rating,
             "body": self.body,

@@ -191,3 +191,37 @@ def test_shop_accounts_cannot_review_products(client, auth_tokens):
     )
 
     assert blocked.status_code == 403
+
+
+def test_reviews_identify_their_author_by_id_not_display_name(client, auth_tokens):
+    """Two customers may share a display name; only the id tells them apart."""
+    client.post(
+        "/api/auth/register/customer",
+        json={
+            "display_name": "Customer",  # same display name as the fixture user
+            "email": "twin@test.az",
+            "password": "TwinPass!123",
+        },
+    )
+    twin = client.post(
+        "/api/auth/login", json={"email": "twin@test.az", "password": "TwinPass!123"}
+    ).get_json()
+
+    client.post(
+        "/api/products/1/reviews",
+        json={"rating": 5, "body": "From the fixture customer."},
+        headers={"Authorization": f"Bearer {auth_tokens['customer']}"},
+    )
+    client.post(
+        "/api/products/1/reviews",
+        json={"rating": 2, "body": "From the twin."},
+        headers={"Authorization": f"Bearer {twin['access_token']}"},
+    )
+
+    reviews = client.get("/api/products/1").get_json()["product"]["reviews"]
+    assert len(reviews) == 2
+    assert {review["customer"] for review in reviews} == {"Customer"}
+
+    by_twin = [r for r in reviews if r["customer_id"] == twin["user"]["id"]]
+    assert len(by_twin) == 1
+    assert by_twin[0]["body"] == "From the twin."

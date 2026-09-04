@@ -1012,7 +1012,7 @@ function ReviewSection({ productId, reviews, translations, onDone }) {
   const mine =
     isCustomer && session
       ? (reviews || []).find(
-          (review) => review.customer === session.user.display_name,
+          (review) => review.customer_id === session.user.id,
         )
       : null;
 
