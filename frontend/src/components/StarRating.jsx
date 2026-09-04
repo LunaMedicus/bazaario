@@ -1,5 +1,5 @@
 import React from "react";
-import clickSound from "../sounds/star-click.mp3";
+import { playClick } from "../sound";
 
 function StarRating({ value, onChange }) {
   return (
@@ -10,13 +10,12 @@ function StarRating({ value, onChange }) {
           type="button"
           className={star <= value ? "star active" : "star"}
           onClick={() => {
-          const audio = new Audio(clickSound);
-          audio.currentTime = 0;
-          audio.play();
-          onChange(star);
+            playClick();
+            onChange(star);
           }}
           aria-label={`${star} star${star > 1 ? "s" : ""}`}
-          aria-pressed={star === value}
+          role="radio"
+          aria-checked={star === value}
         >
           ★
         </button>
