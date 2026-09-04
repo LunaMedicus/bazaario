@@ -1,8 +1,29 @@
+import logging
+
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 
-from .config import Config
+from .config import Config, _on_a_multi_instance_host
 from .extensions import db, jwt
+
+
+logger = logging.getLogger(__name__)
+
+
+def _check_jwt_secret(app):
+    """Refuse an ephemeral signing key where it would log users out at random."""
+    if app.config.get("TESTING") or not app.config.get("JWT_SECRET_KEY_IS_EPHEMERAL"):
+        return
+    if _on_a_multi_instance_host():
+        raise RuntimeError(
+            "JWT_SECRET_KEY is not set. Every instance would sign tokens with a "
+            "different generated key, so sessions would fail unpredictably. Set "
+            "JWT_SECRET_KEY in the environment before deploying."
+        )
+    logger.warning(
+        "JWT_SECRET_KEY is not set; using a key generated for this process. "
+        "Tokens stop working when it restarts. Set JWT_SECRET_KEY in .env."
+    )
 
 
 def create_app(config_overrides=None):
@@ -10,6 +31,8 @@ def create_app(config_overrides=None):
     app.config.from_object(Config)
     if config_overrides:
         app.config.update(config_overrides)
+
+    _check_jwt_secret(app)
 
     # Gzip JSON payloads. The catalog compresses roughly ten to one, so
     # clients download far fewer bytes.

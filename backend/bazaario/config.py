@@ -29,11 +29,26 @@ def _engine_options(url: str) -> dict:
     return options
 
 
+def _on_a_multi_instance_host() -> bool:
+    """True when more than one process may serve the same users.
+
+    A per-process secret is survivable on a laptop and broken anywhere that
+    runs several instances: each one signs with a different key, so a token
+    minted by instance A is rejected as invalid by instance B and the user is
+    logged out at random. Vercel sets VERCEL; the override exists so any other
+    host can demand the same guarantee.
+    """
+    return bool(os.getenv("VERCEL") or os.getenv("BAZAARIO_REQUIRE_JWT_SECRET"))
+
+
 class Config:
     SQLALCHEMY_DATABASE_URI = _normalize_db_url(os.getenv("DATABASE_URL", ""))
     SQLALCHEMY_ENGINE_OPTIONS = _engine_options(SQLALCHEMY_DATABASE_URI)
     SQLALCHEMY_TRACK_MODIFICATIONS = False
+    # A generated fallback keeps a fresh clone runnable with no .env; the
+    # flag beside it lets create_app refuse that fallback where it is unsafe.
     JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY") or secrets.token_urlsafe(48)
+    JWT_SECRET_KEY_IS_EPHEMERAL = not os.getenv("JWT_SECRET_KEY")
     JWT_ACCESS_TOKEN_EXPIRES = int(os.getenv("JWT_ACCESS_TOKEN_EXPIRES", "86400"))
     JSON_SORT_KEYS = False
     CORS_ORIGINS = os.getenv(
