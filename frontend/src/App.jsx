@@ -156,6 +156,13 @@ function App() {
     storeLang(next);
   };
 
+  // index.html hardcodes lang="en". Screen readers pick their pronunciation
+  // from this attribute and search engines read it as the page language, so
+  // it has to follow the switcher rather than stay on English.
+  useEffect(() => {
+    document.documentElement.lang = lang;
+  }, [lang]);
+
   const t = (key, params) => translate(lang, key, params);
 
   const [session, setSession] = useState(getSession);
