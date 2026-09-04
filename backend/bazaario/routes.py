@@ -927,6 +927,10 @@ def suspend_user(user_id):
     if not user:
         raise ApiError("User not found", 404, "not_found")
     user.account_status = "suspended"
+    # A shop account and its profile have to move together, or the shop shows
+    # as approved in the verification queue while its listings are hidden.
+    if user.shop_profile:
+        user.shop_profile.verification_status = "suspended"
     _commit()
     return jsonify({"user": user.to_dict(), "message": "User suspended"})
 
@@ -939,6 +943,12 @@ def restore_user(user_id):
     if not user:
         raise ApiError("User not found", 404, "not_found")
     user.account_status = "active"
+    if user.shop_profile and user.shop_profile.verification_status == "suspended":
+        # Only a suspension is undone here; a shop still awaiting its first
+        # review must stay pending rather than be approved by a restore.
+        user.shop_profile.verification_status = (
+            "approved" if user.shop_profile.verified_at else "pending_verification"
+        )
     _commit()
     return jsonify({"user": user.to_dict(), "message": "User restored"})
 
