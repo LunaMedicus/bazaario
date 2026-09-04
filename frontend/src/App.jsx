@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from "react";
-import clickSound from "./sounds/star-click.mp3";
+import React, { createContext, useContext, useEffect, useState } from "react";
 import { api, clearSession, getSession, saveSession } from "./api";
+import { playClick } from "./sound";
 import { LANGS, LangProvider, getInitialLang, storeLang, useT, useLang, useSetLang, translate } from "./i18n";
 import { translateMany, translateSearchQuery } from "./mt";
 import { cdnImage } from "./images";
@@ -33,6 +33,104 @@ function useRoute() {
 
 function money(value) {
   return `${Number(value || 0).toFixed(2)} AZN`;
+}
+
+const FAVORITES_KEY = "bazaario_favorites";
+
+function readStoredFavorites() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(FAVORITES_KEY) || "[]");
+    return Array.isArray(parsed) ? parsed.filter(Number.isInteger) : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeStoredFavorites(ids) {
+  try {
+    localStorage.setItem(FAVORITES_KEY, JSON.stringify(ids));
+  } catch {
+    // Private windows and full quotas both throw. Favorites are a
+    // convenience; never fail the interaction over storage.
+  }
+}
+
+const FavoritesContext = createContext(null);
+
+// Signed-in customers keep favorites on the server, so they survive a new
+// device or a cleared browser. Everyone else keeps them in this browser.
+function FavoritesProvider({ session, children }) {
+  const customerId =
+    session?.user?.role === "customer" ? session.user.id : null;
+  const [ids, setIds] = useState(readStoredFavorites);
+
+  useEffect(() => {
+    if (!customerId) {
+      setIds(readStoredFavorites());
+      return undefined;
+    }
+
+    let active = true;
+    (async () => {
+      // Carry anything picked before signing in up to the account once, so a
+      // visitor who creates an account keeps what they chose as a guest.
+      for (const id of readStoredFavorites()) {
+        try {
+          await api.addFavorite(id);
+        } catch {
+          // The listing may be gone; the server list below is the record.
+        }
+      }
+      try {
+        const data = await api.favorites();
+        if (!active) return;
+        setIds((data.favorites || []).map((product) => product.id));
+        writeStoredFavorites([]);
+      } catch {
+        // Offline, or the call failed. Keep whatever this browser holds.
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [customerId]);
+
+  const toggle = async (productId) => {
+    const saved = ids.includes(productId);
+    const next = saved
+      ? ids.filter((id) => id !== productId)
+      : [...ids, productId];
+
+    setIds(next);
+    playClick();
+
+    if (!customerId) {
+      writeStoredFavorites(next);
+      return;
+    }
+
+    try {
+      if (saved) await api.removeFavorite(productId);
+      else await api.addFavorite(productId);
+    } catch {
+      setIds(ids);
+    }
+  };
+
+  return (
+    <FavoritesContext.Provider
+      value={{ ids, toggle, synced: Boolean(customerId) }}
+    >
+      {children}
+    </FavoritesContext.Provider>
+  );
+}
+
+function useFavorites() {
+  return (
+    useContext(FavoritesContext) ?? { ids: [], toggle: () => {}, synced: false }
+  );
 }
 
 function App() {
@@ -167,7 +265,8 @@ function App() {
 
   return (
     <LangProvider value={{ lang, setLang }}>
-      <div className="app-shell">
+      <FavoritesProvider session={session}>
+        <div className="app-shell">
         <Header
           session={session}
           onNavigate={navigate}
@@ -184,8 +283,9 @@ function App() {
 
         <main>{content}</main>
 
-        <Footer />
-      </div>
+          <Footer />
+        </div>
+      </FavoritesProvider>
     </LangProvider>
   );
 }
@@ -257,7 +357,7 @@ function Nav({ session, onNavigate }) {
       </button>
 
       <button onClick={() => onNavigate("/favorites")}>
-        Favorites
+        {t("nav.favorites")}
       </button>
 
       {session && (
@@ -438,50 +538,13 @@ function CatalogView({ onNavigate }) {
 function ProductCard({ product, onOpen }) {
   const t = useT();
   const lang = useLang();
+  const { ids, toggle } = useFavorites();
 
-  const [isFavorite, setIsFavorite] = useState(() => {
-    try {
-      const favorites = JSON.parse(
-        localStorage.getItem("bazaario_favorites") || "[]"
-      );
-      return favorites.includes(product.id);
-    } catch {
-      return false;
-    }
-  });
-
-  
+  const isFavorite = ids.includes(product.id);
 
   const toggleFavorite = (event) => {
     event.stopPropagation();
-
-    try {
-      const audio = new Audio(clickSound);
-      audio.volume = 1;
-      audio.play().catch((error) => {
-          console.error("Favorite sound error:", error);
-      });
-      const favorites = JSON.parse(
-        localStorage.getItem("bazaario_favorites") || "[]"
-      );
-
-      let nextFavorites;
-
-      if (favorites.includes(product.id)) {
-        nextFavorites = favorites.filter((id) => id !== product.id);
-        setIsFavorite(false);
-      } else {
-        nextFavorites = [...favorites, product.id];
-        setIsFavorite(true);
-      }
-
-      localStorage.setItem(
-        "bazaario_favorites",
-        JSON.stringify(nextFavorites)
-      );
-    } catch {
-      // Ignore localStorage errors
-    }
+    toggle(product.id);
   };
 
   const shownName = product.name;
@@ -514,8 +577,8 @@ function ProductCard({ product, onOpen }) {
           onClick={toggleFavorite}
           aria-label={
             isFavorite
-              ? `Remove ${shownName} from favorites`
-              : `Add ${shownName} to favorites`
+              ? t("fav.removeAria", { name: shownName })
+              : t("fav.addAria", { name: shownName })
           }
           aria-pressed={isFavorite}
         >
@@ -559,107 +622,82 @@ function ProductCard({ product, onOpen }) {
 }
 
 function FavoritesView({ onNavigate }) {
+  const t = useT();
+  const session = getSession();
+  const { ids, synced, toggle } = useFavorites();
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  const loadFavorites = async () => {
+  useEffect(() => {
+    let active = true;
     setLoading(true);
     setError("");
 
-    try {
-      const savedFavorites = JSON.parse(
-        localStorage.getItem("bazaario_favorites") || "[]"
-      );
+    // Signed-in customers read their saved list straight from the account.
+    // Everyone else holds ids in this browser, so the catalog supplies the
+    // product bodies to match them against.
+    const request = synced
+      ? api.favorites().then((data) => data.favorites || [])
+      : api.products().then((data) => data.products || []);
 
-      if (!savedFavorites.length) {
-        setProducts([]);
-        setLoading(false);
-        return;
-      }
+    request
+      .then((rows) => {
+        if (active) setProducts(rows);
+      })
+      .catch((err) => {
+        if (active) setError(err.message);
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
 
-      const data = await api.products(new URLSearchParams());
-      const allProducts = data.products || [];
+    return () => {
+      active = false;
+    };
+  }, [synced]);
 
-      const favoriteProducts = allProducts.filter((product) =>
-        savedFavorites.includes(product.id)
-      );
-
-      setProducts(favoriteProducts);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    loadFavorites();
-  }, []);
-
-  const removeFavorite = (productId) => {
-    try {
-      const favorites = JSON.parse(
-        localStorage.getItem("bazaario_favorites") || "[]"
-      );
-
-      const nextFavorites = favorites.filter(
-        (id) => id !== productId
-      );
-
-      localStorage.setItem(
-        "bazaario_favorites",
-        JSON.stringify(nextFavorites)
-      );
-
-      setProducts((current) =>
-        current.filter((product) => product.id !== productId)
-      );
-    } catch {
-      // Ignore localStorage errors
-    }
-  };
+  // Derive the visible cards from the shared id list rather than from local
+  // state, so unsaving a product removes its card at once instead of leaving
+  // it on screen until the next reload.
+  const saved = products.filter((product) => ids.includes(product.id));
 
   return (
     <div className="page page-catalog">
       <section className="catalog-intro">
-        <h1>Favorites</h1>
-        <p>
-          Your saved products
-        </p>
+        <h1>{t("fav.title")}</h1>
+        <p>{t("fav.subtitle")}</p>
+        {!synced && saved.length > 0 && (
+          <p className="muted">
+            {session ? t("fav.customersOnly") : t("fav.localOnly")}
+          </p>
+        )}
       </section>
 
       {error && <InlineError message={error} />}
 
       {loading ? (
-        <div className="empty-state">
-          Loading favorites...
-        </div>
-      ) : products.length ? (
+        <div className="empty-state">{t("fav.loading")}</div>
+      ) : saved.length ? (
         <>
           <div className="catalog-meta">
-            <span>
-              {products.length}{" "}
-              {products.length === 1 ? "favorite" : "favorites"}
-            </span>
+            <span>{t("fav.count", { n: saved.length })}</span>
           </div>
 
           <div className="product-grid">
-            {products.map((product) => (
+            {saved.map((product) => (
               <div className="favorite-product-wrapper" key={product.id}>
                 <ProductCard
                   product={product}
-                  onOpen={() =>
-                    onNavigate(`/product/${product.id}`)
-                  }
+                  onOpen={() => onNavigate(`/product/${product.id}`)}
                 />
 
                 <button
                   type="button"
                   className="favorite-remove-button"
-                  onClick={() => removeFavorite(product.id)}
+                  onClick={() => toggle(product.id)}
                 >
-                  Remove from favorites
+                  {t("fav.remove")}
                 </button>
               </div>
             ))}
@@ -667,16 +705,11 @@ function FavoritesView({ onNavigate }) {
         </>
       ) : (
         <div className="empty-state favorites-empty">
-          <h2>No favorites yet</h2>
-          <p>
-            Go to the catalog and click ♡ on products you want to save.
-          </p>
+          <h2>{t("fav.emptyTitle")}</h2>
+          <p>{t("fav.emptyBody")}</p>
 
-          <button
-            className="button"
-            onClick={() => onNavigate("/")}
-          >
-            Browse products
+          <button className="button" onClick={() => onNavigate("/")}>
+            {t("fav.browse")}
           </button>
         </div>
       )}
